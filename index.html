@@ -16,12 +16,13 @@
     }
 
     video {
+      position: absolute;
       border: 2px solid white;
       border-radius: 5px;
       width: 120px;
       height: 90px;
-      position: absolute;
       object-fit: cover;
+      pointer-events: none;
     }
 
     .controls {
@@ -62,7 +63,7 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-    import { getDatabase, ref, set, onValue, remove, push } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
@@ -88,7 +89,6 @@
     const players = {};
     const addedVideos = new Set();
 
-    // Player setup
     const player = {
       id: userId,
       x: Math.random() * (canvas.width - 50),
@@ -98,47 +98,46 @@
       dx: 0,
       dy: 0,
       isJumping: false,
-      grounded: true,
-      videoStream: null
+      grounded: true
     };
 
-    const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
 
-    const addVideoStream = (stream, id, x, y) => {
+    const addVideoStream = (stream, id) => {
       if (addedVideos.has(id)) return;
 
-      const video = document.createElement("video");
+      const video = document.createElement('video');
       video.srcObject = stream;
       video.autoplay = true;
-      video.muted = id === userId;
+      video.muted = id === userId; // Mute local video
       video.dataset.userId = id;
-      video.style.left = `${x}px`;
-      video.style.top = `${y}px`;
       document.body.appendChild(video);
 
       addedVideos.add(id);
     };
 
-    addVideoStream(localStream, userId, player.x, player.y);
-    player.videoStream = localStream;
+    // Add local video
+    addVideoStream(localStream, userId);
 
-    // Save player data to Firebase
+    // Send player data to Firebase
     const updatePlayerData = () => {
       set(ref(db, `players/${userId}`), {
         ...player,
-        videoStream: null // Stream is handled locally
+        videoStream: null // Stream handled locally
       });
     };
 
-    // Movement logic
-    function movePlayer() {
+    // Handle player movement
+    const movePlayer = () => {
       player.x += player.dx;
 
+      // Apply gravity
       if (!player.grounded) {
-        player.dy += 0.8; // Gravity
+        player.dy += 0.8; // Gravity force
         player.y += player.dy;
       }
 
+      // Prevent falling through the ground
       if (player.y + player.height >= canvas.height) {
         player.y = canvas.height - player.height;
         player.dy = 0;
@@ -146,23 +145,44 @@
         player.isJumping = false;
       }
 
+      // Prevent moving out of bounds
       if (player.x < 0) player.x = 0;
       if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
-    }
+    };
 
-    // Draw players
-    function drawPlayers() {
+    // Draw all players
+    const drawPlayers = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       Object.values(players).forEach(p => {
-        ctx.fillStyle = "transparent";
+        ctx.fillStyle = 'transparent';
         ctx.fillRect(p.x, p.y, p.width, p.height);
+
+        // Update video position
         const videoElement = document.querySelector(`[data-user-id="${p.id}"]`);
         if (videoElement) {
           videoElement.style.left = `${p.x}px`;
           videoElement.style.top = `${p.y}px`;
         }
       });
-    }
+    };
+
+    // Handle Firebase updates
+    const playersRef = ref(db, 'players');
+    onValue(playersRef, snapshot => {
+      const data = snapshot.val() || {};
+      Object.keys(data).forEach(id => {
+        if (id !== userId) {
+          players[id] = data[id];
+
+          if (!addedVideos.has(id)) {
+            navigator.mediaDevices.getUserMedia({ video: true, audio: false }).then(stream => {
+              addVideoStream(stream, id);
+            });
+          }
+        }
+      });
+      drawPlayers();
+    });
 
     // Controls
     const leftButton = document.getElementById('left');
@@ -182,34 +202,20 @@
     leftButton.addEventListener('mouseup', () => player.dx = 0);
     rightButton.addEventListener('mouseup', () => player.dx = 0);
 
-    // Firebase updates
-    const playersRef = ref(db, 'players');
-    onValue(playersRef, (snapshot) => {
-      const data = snapshot.val() || {};
-      Object.keys(data).forEach(id => {
-        if (id !== userId) {
-          players[id] = data[id];
-          if (!addedVideos.has(id)) {
-            navigator.mediaDevices.getUserMedia({ video: true, audio: false }).then(stream => {
-              addVideoStream(stream, id, data[id].x, data[id].y);
-            });
-          }
-        }
-      });
+    // Game loop
+    const update = () => {
+      movePlayer();
+      updatePlayerData();
       drawPlayers();
-    });
+      requestAnimationFrame(update);
+    };
 
+    update();
+
+    // Handle cleanup on unload
     window.addEventListener('beforeunload', () => {
       remove(ref(db, `players/${userId}`));
     });
-
-    function update() {
-      movePlayer();
-      updatePlayerData();
-      requestAnimationFrame(update);
-    }
-
-    update();
   </script>
 </body>
 </html>
