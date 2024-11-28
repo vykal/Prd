@@ -1,18 +1,215 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Multiplayer Video Game</title>
-    <link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Multiplayer Game</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+    }
+
+    canvas {
+      display: block;
+      background: lightblue;
+    }
+
+    video {
+      border: 2px solid white;
+      border-radius: 5px;
+      width: 120px;
+      height: 90px;
+      position: absolute;
+      object-fit: cover;
+    }
+
+    .controls {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 10px;
+    }
+
+    .button {
+      width: 60px;
+      height: 60px;
+      background: gray;
+      color: white;
+      font-size: 20px;
+      font-weight: bold;
+      text-align: center;
+      line-height: 60px;
+      border-radius: 10px;
+      user-select: none;
+      cursor: pointer;
+    }
+
+    .button:active {
+      background: darkgray;
+    }
+  </style>
 </head>
 <body>
-<canvas id="gameCanvas"></canvas>
-<div class="controls">
+  <canvas id="gameCanvas"></canvas>
+  <div class="controls">
     <div class="button" id="left">◀</div>
     <div class="button" id="jump">⤒</div>
     <div class="button" id="right">▶</div>
-</div>
-<script type="module" src="game.js"></script>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+    import { getDatabase, ref, set, onValue, remove, push } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
+      authDomain: "videjo-d0996.firebaseapp.com",
+      databaseURL: "https://videjo-d0996-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId: "videjo-d0996",
+      storageBucket: "videjo-d0996.firebasestorage.app",
+      messagingSenderId: "175126755237",
+      appId: "1:175126755237:web:8cf31d7a4d08f9fb2bda4c",
+      measurementId: "G-6Q2BJX1FE5"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+
+    // Canvas setup
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const userId = Math.random().toString(36).substring(2, 15);
+    const players = {};
+    const addedVideos = new Set();
+
+    // Player setup
+    const player = {
+      id: userId,
+      x: Math.random() * (canvas.width - 50),
+      y: canvas.height - 150,
+      width: 50,
+      height: 50,
+      dx: 0,
+      dy: 0,
+      isJumping: false,
+      grounded: true,
+      videoStream: null
+    };
+
+    const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+
+    const addVideoStream = (stream, id, x, y) => {
+      if (addedVideos.has(id)) return;
+
+      const video = document.createElement("video");
+      video.srcObject = stream;
+      video.autoplay = true;
+      video.muted = id === userId;
+      video.dataset.userId = id;
+      video.style.left = `${x}px`;
+      video.style.top = `${y}px`;
+      document.body.appendChild(video);
+
+      addedVideos.add(id);
+    };
+
+    addVideoStream(localStream, userId, player.x, player.y);
+    player.videoStream = localStream;
+
+    // Save player data to Firebase
+    const updatePlayerData = () => {
+      set(ref(db, `players/${userId}`), {
+        ...player,
+        videoStream: null // Stream is handled locally
+      });
+    };
+
+    // Movement logic
+    function movePlayer() {
+      player.x += player.dx;
+
+      if (!player.grounded) {
+        player.dy += 0.8; // Gravity
+        player.y += player.dy;
+      }
+
+      if (player.y + player.height >= canvas.height) {
+        player.y = canvas.height - player.height;
+        player.dy = 0;
+        player.grounded = true;
+        player.isJumping = false;
+      }
+
+      if (player.x < 0) player.x = 0;
+      if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+    }
+
+    // Draw players
+    function drawPlayers() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      Object.values(players).forEach(p => {
+        ctx.fillStyle = "transparent";
+        ctx.fillRect(p.x, p.y, p.width, p.height);
+        const videoElement = document.querySelector(`[data-user-id="${p.id}"]`);
+        if (videoElement) {
+          videoElement.style.left = `${p.x}px`;
+          videoElement.style.top = `${p.y}px`;
+        }
+      });
+    }
+
+    // Controls
+    const leftButton = document.getElementById('left');
+    const rightButton = document.getElementById('right');
+    const jumpButton = document.getElementById('jump');
+
+    leftButton.addEventListener('mousedown', () => player.dx = -5);
+    rightButton.addEventListener('mousedown', () => player.dx = 5);
+    jumpButton.addEventListener('mousedown', () => {
+      if (player.grounded) {
+        player.dy = -15;
+        player.grounded = false;
+        player.isJumping = true;
+      }
+    });
+
+    leftButton.addEventListener('mouseup', () => player.dx = 0);
+    rightButton.addEventListener('mouseup', () => player.dx = 0);
+
+    // Firebase updates
+    const playersRef = ref(db, 'players');
+    onValue(playersRef, (snapshot) => {
+      const data = snapshot.val() || {};
+      Object.keys(data).forEach(id => {
+        if (id !== userId) {
+          players[id] = data[id];
+          if (!addedVideos.has(id)) {
+            navigator.mediaDevices.getUserMedia({ video: true, audio: false }).then(stream => {
+              addVideoStream(stream, id, data[id].x, data[id].y);
+            });
+          }
+        }
+      });
+      drawPlayers();
+    });
+
+    window.addEventListener('beforeunload', () => {
+      remove(ref(db, `players/${userId}`));
+    });
+
+    function update() {
+      movePlayer();
+      updatePlayerData();
+      requestAnimationFrame(update);
+    }
+
+    update();
+  </script>
 </body>
 </html>
