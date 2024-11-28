@@ -27,9 +27,8 @@
 </head>
 <body>
     <script type="module">
-        // Import potrebných knižníc Firebase
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-        import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+        import { getDatabase, ref, set, onValue, remove, push } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
         // Firebase konfigurácia
         const firebaseConfig = {
@@ -43,56 +42,144 @@
             measurementId: "G-6Q2BJX1FE5"
         };
 
-        // Inicializácia Firebase aplikácie
         const app = initializeApp(firebaseConfig);
         const database = getDatabase(app);
 
-        // Generovanie jedinečného ID pre používateľa
         const userId = `user_${Math.random().toString(36).substr(2, 9)}`;
+        const userRef = ref(database, `users/${userId}`);
 
-        // Video element pre lokálny stream
+        const peerConnections = {};
+        const configuration = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+
         const localVideo = document.createElement("video");
         localVideo.autoplay = true;
         localVideo.muted = true;
         document.body.appendChild(localVideo);
 
+        let localStream = null;
+
         // Pripojenie ku kamere
-        navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+        navigator.mediaDevices.getUserMedia({ video: true, audio: true })
             .then(stream => {
+                localStream = stream;
                 localVideo.srcObject = stream;
 
-                // Uloženie údajov používateľa do databázy
-                const userRef = ref(database, `users/${userId}`);
                 set(userRef, { id: userId, timestamp: Date.now() });
+                window.addEventListener("beforeunload", () => remove(userRef));
 
-                // Odstránenie používateľa z databázy pri odchode
-                window.addEventListener("beforeunload", () => {
-                    remove(userRef);
-                });
+                listenForUsers();
             })
-            .catch(err => {
-                console.error("Prístup ku kamere bol zamietnutý:", err);
-            });
+            .catch(err => console.error("Prístup ku kamere bol zamietnutý:", err));
 
-        // Načítanie zoznamu pripojených používateľov
-        const usersRef = ref(database, "users");
-        onValue(usersRef, snapshot => {
-            const users = snapshot.val();
-            document.querySelectorAll("video.remote").forEach(video => video.remove());
-
-            if (users) {
+        function listenForUsers() {
+            const usersRef = ref(database, "users");
+            onValue(usersRef, snapshot => {
+                const users = snapshot.val() || {};
                 Object.keys(users).forEach(key => {
-                    if (key !== userId) {
-                        const remoteVideo = document.createElement("video");
-                        remoteVideo.classList.add("remote");
-                        remoteVideo.autoplay = true;
-                        document.body.appendChild(remoteVideo);
-
-                        // V tomto kóde sa video stream iných používateľov nezobrazuje.
-                        // Na zdieľanie video streamov by sa musel implementovať WebRTC.
+                    if (key !== userId && !peerConnections[key]) {
+                        createPeerConnection(key);
                     }
                 });
+            });
+        }
+
+        function createPeerConnection(remoteUserId) {
+            const peerConnection = new RTCPeerConnection(configuration);
+            peerConnections[remoteUserId] = peerConnection;
+
+            localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+            peerConnection.onicecandidate = event => {
+                if (event.candidate) {
+                    push(ref(database, `ice_candidates/${remoteUserId}`), {
+                        from: userId,
+                        candidate: event.candidate
+                    });
+                }
+            };
+
+            peerConnection.ontrack = event => {
+                const remoteVideo = document.createElement("video");
+                remoteVideo.autoplay = true;
+                remoteVideo.srcObject = event.streams[0];
+                document.body.appendChild(remoteVideo);
+            };
+
+            peerConnection.onconnectionstatechange = () => {
+                if (peerConnection.connectionState === "disconnected") {
+                    delete peerConnections[remoteUserId];
+                }
+            };
+
+            peerConnection.createOffer()
+                .then(offer => peerConnection.setLocalDescription(offer))
+                .then(() => {
+                    set(ref(database, `offers/${remoteUserId}`), {
+                        from: userId,
+                        offer: peerConnection.localDescription
+                    });
+                });
+
+            listenForAnswers(remoteUserId);
+        }
+
+        function listenForAnswers(remoteUserId) {
+            const answerRef = ref(database, `answers/${userId}`);
+            onValue(answerRef, snapshot => {
+                const data = snapshot.val();
+                if (data && data.from === remoteUserId) {
+                    const desc = new RTCSessionDescription(data.answer);
+                    peerConnections[remoteUserId].setRemoteDescription(desc);
+                }
+            });
+        }
+
+        const offersRef = ref(database, `offers/${userId}`);
+        onValue(offersRef, snapshot => {
+            const data = snapshot.val();
+            if (data && !peerConnections[data.from]) {
+                const peerConnection = new RTCPeerConnection(configuration);
+                peerConnections[data.from] = peerConnection;
+
+                peerConnection.onicecandidate = event => {
+                    if (event.candidate) {
+                        push(ref(database, `ice_candidates/${data.from}`), {
+                            from: userId,
+                            candidate: event.candidate
+                        });
+                    }
+                };
+
+                peerConnection.ontrack = event => {
+                    const remoteVideo = document.createElement("video");
+                    remoteVideo.autoplay = true;
+                    remoteVideo.srcObject = event.streams[0];
+                    document.body.appendChild(remoteVideo);
+                };
+
+                peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer))
+                    .then(() => peerConnection.createAnswer())
+                    .then(answer => peerConnection.setLocalDescription(answer))
+                    .then(() => {
+                        set(ref(database, `answers/${data.from}`), {
+                            from: userId,
+                            answer: peerConnection.localDescription
+                        });
+                    });
+
+                localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
             }
+        });
+
+        const candidatesRef = ref(database, `ice_candidates/${userId}`);
+        onValue(candidatesRef, snapshot => {
+            const candidates = snapshot.val() || {};
+            Object.keys(candidates).forEach(key => {
+                const { from, candidate } = candidates[key];
+                if (peerConnections[from]) {
+                    peerConnections[from].addIceCandidate(new RTCIceCandidate(candidate));
+                }
+            });
         });
     </script>
 </body>
