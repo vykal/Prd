@@ -68,7 +68,7 @@
         const peerConnections = {};
         const configuration = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
 
-        // Funkcia na pridanie videa do kontajnera
+        // Funkcia na vytvorenie video elementu
         function createVideoElement(stream, muted = false) {
             const video = document.createElement("video");
             video.autoplay = true;
@@ -77,25 +77,26 @@
             videoContainer.appendChild(video);
         }
 
-        // Získanie prístupu ku kamere a mikrofónu
+        // Pripojenie k lokálnej kamere
         navigator.mediaDevices.getUserMedia({ video: true, audio: true })
             .then(stream => {
                 localStream = stream;
                 createVideoElement(localStream, true); // Lokálne video
                 registerUser();
-                setupListeners();
+                setupFirebaseListeners();
             })
             .catch(err => console.error("Prístup ku kamere bol zamietnutý:", err));
 
-        // Registrácia používateľa do Firebase
+        // Registrácia používateľa
         function registerUser() {
             const userRef = ref(database, `users/${userId}`);
             set(userRef, { id: userId, timestamp: Date.now() });
             window.addEventListener("beforeunload", () => remove(userRef));
         }
 
-        // Nastavenie Firebase poslucháčov
-        function setupListeners() {
+        // Firebase poslucháče
+        function setupFirebaseListeners() {
+            // Pridanie nového používateľa
             onChildAdded(usersRef, snapshot => {
                 const newUserId = snapshot.val().id;
                 if (newUserId !== userId) {
@@ -103,6 +104,7 @@
                 }
             });
 
+            // Odstránenie používateľa
             onChildRemoved(usersRef, snapshot => {
                 const removedUserId = snapshot.val().id;
                 if (peerConnections[removedUserId]) {
@@ -112,13 +114,15 @@
             });
         }
 
-        // Nastavenie PeerConnection pre nového používateľa
+        // Nastavenie PeerConnection
         function setupPeerConnection(remoteUserId) {
             const peerConnection = new RTCPeerConnection(configuration);
             peerConnections[remoteUserId] = peerConnection;
 
+            // Pridanie lokálneho streamu
             localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
 
+            // ICE kandidáty
             peerConnection.onicecandidate = event => {
                 if (event.candidate) {
                     push(ref(database, `candidates/${remoteUserId}`), {
@@ -128,10 +132,12 @@
                 }
             };
 
+            // Spracovanie vzdialeného streamu
             peerConnection.ontrack = event => {
-                createVideoElement(event.streams[0]); // Pridanie vzdialeného videa
+                createVideoElement(event.streams[0]); // Zobrazenie vzdialeného videa
             };
 
+            // Vytvorenie a odoslanie ponuky
             peerConnection.createOffer()
                 .then(offer => peerConnection.setLocalDescription(offer))
                 .then(() => {
@@ -144,6 +150,7 @@
             listenForAnswer(remoteUserId);
         }
 
+        // Počúvanie odpovede
         function listenForAnswer(remoteUserId) {
             const answersRef = ref(database, `answers/${userId}`);
             onChildAdded(answersRef, snapshot => {
@@ -154,6 +161,7 @@
             });
         }
 
+        // Počúvanie ponúk
         const offersRef = ref(database, `offers/${userId}`);
         onChildAdded(offersRef, snapshot => {
             const data = snapshot.val();
@@ -188,6 +196,7 @@
             }
         });
 
+        // Spracovanie ICE kandidátov
         const candidatesRef = ref(database, "candidates");
         onChildAdded(candidatesRef, snapshot => {
             const data = snapshot.val();
