@@ -65,8 +65,8 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-    // Firebase configuration for movement
-    const firebaseConfigMovement = {
+    // Firebase configuration
+    const firebaseConfig = {
         apiKey: "AIzaSyACWLI7L0zhZk7RFQyEXlOyQjtMPF-MgDw",
         authDomain: "hrav-1a742.firebaseapp.com",
         databaseURL: "https://hrav-1a742-default-rtdb.europe-west1.firebasedatabase.app",
@@ -77,23 +77,9 @@
         measurementId: "G-GFVZ6ZD5RE"
     };
 
-    // Firebase configuration for video
-    const firebaseConfigVideo = {
-        apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
-        authDomain: "videjo-d0996.firebaseapp.com",
-        databaseURL: "https://videjo-d0996-default-rtdb.europe-west1.firebasedatabase.app",
-        projectId: "videjo-d0996",
-        storageBucket: "videjo-d0996.firebasestorage.app",
-        messagingSenderId: "175126755237",
-        appId: "1:175126755237:web:8cf31d7a4d08f9fb2bda4c",
-        measurementId: "G-6Q2BJX1FE5"
-    };
-
-    // Initialize Firebase apps
-    const appMovement = initializeApp(firebaseConfigMovement, "movement");
-    const appVideo = initializeApp(firebaseConfigVideo, "video");
-    const dbMovement = getDatabase(appMovement);
-    const dbVideo = getDatabase(appVideo);
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
 
     const canvas = document.getElementById('gameCanvas');
     canvas.width = window.innerWidth;
@@ -128,7 +114,7 @@
 
     // Send player data to Firebase
     function sendPlayerData() {
-        set(ref(dbMovement, `players/${playerId}`), {
+        set(ref(db, `players/${playerId}`), {
             ...player,
             streamId: localStream.id
         });
@@ -160,7 +146,7 @@
     }
 
     // Handle remote players
-    onValue(ref(dbMovement, 'players'), (snapshot) => {
+    onValue(ref(db, 'players'), (snapshot) => {
         const data = snapshot.val() || {};
         Object.keys(data).forEach((id) => {
             if (id === playerId) return;
@@ -170,6 +156,7 @@
                 newVideo.style.position = 'absolute';
                 newVideo.style.width = '150px';
                 newVideo.style.height = '100px';
+                newVideo.autoplay = true;
                 document.body.appendChild(newVideo);
                 players[id] = { ...data[id], videoElement: newVideo };
             }
@@ -189,6 +176,12 @@
 
     leftButton.addEventListener('mousedown', () => (player.dx = -5));
     rightButton.addEventListener('mousedown', () => (player.dx = 5));
+    window.addEventListener('mouseup', () => (player.dx = 0));
+
+    leftButton.addEventListener('touchstart', () => (player.dx = -5));
+    rightButton.addEventListener('touchstart', () => (player.dx = 5));
+    window.addEventListener('touchend', () => (player.dx = 0));
+
     jumpButton.addEventListener('mousedown', () => {
         if (player.grounded) {
             player.dy = -15;
@@ -196,11 +189,16 @@
         }
     });
 
-    window.addEventListener('mouseup', () => (player.dx = 0));
+    jumpButton.addEventListener('touchstart', () => {
+        if (player.grounded) {
+            player.dy = -15;
+            player.grounded = false;
+        }
+    });
 
     // Remove player on disconnect
     window.addEventListener('beforeunload', () => {
-        remove(ref(dbMovement, `players/${playerId}`));
+        remove(ref(db, `players/${playerId}`));
     });
 
     // Game loop
