@@ -3,216 +3,130 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Interaktívny Video Meeting</title>
+    <title>Interactive Meeting</title>
     <style>
         body {
             margin: 0;
             overflow: hidden;
-        }
-
-        canvas {
-            display: block;
             background: lightblue;
         }
 
         #videos {
-            position: absolute;
-            top: 0;
-            left: 0;
-            pointer-events: none;
+            position: relative;
+            width: 100%;
+            height: 100%;
         }
 
         video {
             position: absolute;
+            width: 200px;
+            height: 150px;
+            object-fit: cover;
             border: 2px solid white;
             border-radius: 10px;
-            width: 100px;
-            height: 75px;
-            object-fit: cover;
-        }
-
-        .controls {
-            position: absolute;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            display: flex;
-            gap: 10px;
-        }
-
-        .button {
-            width: 60px;
-            height: 60px;
-            background: gray;
-            color: white;
-            font-size: 20px;
-            font-weight: bold;
-            text-align: center;
-            line-height: 60px;
-            border-radius: 10px;
-            user-select: none;
-            cursor: pointer;
-        }
-
-        .button:active {
-            background: darkgray;
         }
     </style>
 </head>
 <body>
-    <canvas id="gameCanvas"></canvas>
-    <div id="videos"></div>
-    <div class="controls">
-        <div class="button" id="left">◀</div>
-        <div class="button" id="up">▲</div>
-        <div class="button" id="right">▶</div>
-        <div class="button" id="down">▼</div>
-    </div>
+<div id="videos"></div>
 
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-        import { getDatabase, ref, set, onValue, remove, push } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+    import { getDatabase, ref, set, onValue, remove, push } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-        // Firebase konfigurácia
-        const firebaseConfig = {
-            apiKey: "AIzaSyACWLI7L0zhZk7RFQyEXlOyQjtMPF-MgDw",
-            authDomain: "hrav-1a742.firebaseapp.com",
-            databaseURL: "https://hrav-1a742-default-rtdb.europe-west1.firebasedatabase.app",
-            projectId: "hrav-1a742",
-            storageBucket: "hrav-1a742.appspot.com",
-            messagingSenderId: "1093772001619",
-            appId: "1:1093772001619:web:97d8e6dd9d5cd28da761a6"
-        };
+    // Firebase configuration
+    const firebaseConfig = {
+        apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
+        authDomain: "videjo-d0996.firebaseapp.com",
+        databaseURL: "https://videjo-d0996-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "videjo-d0996",
+        storageBucket: "videjo-d0996.firebasestorage.app",
+        messagingSenderId: "175126755237",
+        appId: "1:175126755237:web:8cf31d7a4d08f9fb2bda4c",
+        measurementId: "G-6Q2BJX1FE5"
+    };
 
-        // Inicializácia Firebase
-        const app = initializeApp(firebaseConfig);
-        const db = getDatabase(app);
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
 
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        const videosContainer = document.getElementById('videos');
+    // Unique player ID
+    const playerId = `player_${Math.random().toString(36).substring(2, 9)}`;
+    const playerRef = ref(db, `players/${playerId}`);
+    const playersRef = ref(db, 'players');
 
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
+    // Local video setup
+    const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    const videoContainer = document.getElementById('videos');
+    const localVideo = document.createElement('video');
+    localVideo.srcObject = localStream;
+    localVideo.autoplay = true;
+    localVideo.muted = true;
+    videoContainer.appendChild(localVideo);
 
-        const playerId = `player_${Math.random().toString(36).substring(2, 9)}`;
-        const player = {
-            id: playerId,
-            x: Math.random() * (canvas.width - 100),
-            y: Math.random() * (canvas.height - 75),
-            width: 100,
-            height: 75
-        };
+    // Player object
+    const player = {
+        id: playerId,
+        x: Math.random() * window.innerWidth,
+        y: Math.random() * window.innerHeight,
+        width: 200,
+        height: 150,
+        stream: localStream,
+    };
 
-        const players = {};
-        const config = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
-        const peers = {};
-        const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    // Send player data to Firebase
+    set(playerRef, {
+        id: player.id,
+        x: player.x,
+        y: player.y,
+    });
 
-        const addVideoStream = (stream, id, x, y) => {
-            let video = document.querySelector(`video[data-id="${id}"]`);
-            if (!video) {
-                video = document.createElement('video');
-                video.srcObject = stream;
-                video.autoplay = true;
-                video.dataset.id = id;
-                video.style.left = `${x}px`;
-                video.style.top = `${y}px`;
-                videosContainer.appendChild(video);
-            }
-        };
+    // Handle player disconnection
+    window.addEventListener('beforeunload', () => {
+        remove(playerRef);
+    });
 
-        addVideoStream(localStream, playerId, player.x, player.y);
+    // Move player
+    const movePlayer = (dx, dy) => {
+        player.x += dx;
+        player.y += dy;
+        if (player.x < 0) player.x = 0;
+        if (player.x + player.width > window.innerWidth) player.x = window.innerWidth - player.width;
+        if (player.y < 0) player.y = 0;
+        if (player.y + player.height > window.innerHeight) player.y = window.innerHeight - player.height;
 
-        function sendDataToFirebase() {
-            set(ref(db, `players/${player.id}`), { ...player });
-        }
+        localVideo.style.left = `${player.x}px`;
+        localVideo.style.top = `${player.y}px`;
 
-        onValue(ref(db, 'players'), (snapshot) => {
-            const data = snapshot.val() || {};
-            Object.keys(data).forEach((id) => {
-                if (id !== playerId) {
-                    const otherPlayer = data[id];
-                    if (!peers[id]) connectToNewUser(id, otherPlayer);
-                    const video = document.querySelector(`video[data-id="${id}"]`);
-                    if (video) {
-                        video.style.left = `${otherPlayer.x}px`;
-                        video.style.top = `${otherPlayer.y}px`;
-                    }
+        set(playerRef, { id: player.id, x: player.x, y: player.y });
+    };
+
+    // Add event listeners for movement
+    window.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowLeft') movePlayer(-10, 0);
+        if (e.key === 'ArrowRight') movePlayer(10, 0);
+        if (e.key === 'ArrowUp') movePlayer(0, -10);
+        if (e.key === 'ArrowDown') movePlayer(0, 10);
+    });
+
+    // Handle other players
+    const otherPlayers = {};
+    onValue(playersRef, (snapshot) => {
+        const players = snapshot.val() || {};
+        Object.keys(players).forEach((id) => {
+            if (id !== playerId) {
+                if (!otherPlayers[id]) {
+                    const video = document.createElement('video');
+                    video.autoplay = true;
+                    videoContainer.appendChild(video);
+                    otherPlayers[id] = { video };
                 }
-            });
-        });
-
-        document.addEventListener('keydown', (e) => {
-            switch (e.key) {
-                case 'ArrowLeft': player.x -= 10; break;
-                case 'ArrowRight': player.x += 10; break;
-                case 'ArrowUp': player.y -= 10; break;
-                case 'ArrowDown': player.y += 10; break;
+                const { x, y } = players[id];
+                otherPlayers[id].video.style.left = `${x}px`;
+                otherPlayers[id].video.style.top = `${y}px`;
             }
-            sendDataToFirebase();
         });
-
-        // Mobilné dotykové ovládanie
-        const leftButton = document.getElementById('left');
-        const rightButton = document.getElementById('right');
-        const upButton = document.getElementById('up');
-        const downButton = document.getElementById('down');
-
-        leftButton.addEventListener('mousedown', () => { player.x -= 10; sendDataToFirebase(); });
-        rightButton.addEventListener('mousedown', () => { player.x += 10; sendDataToFirebase(); });
-        upButton.addEventListener('mousedown', () => { player.y -= 10; sendDataToFirebase(); });
-        downButton.addEventListener('mousedown', () => { player.y += 10; sendDataToFirebase(); });
-
-        leftButton.addEventListener('touchstart', () => { player.x -= 10; sendDataToFirebase(); });
-        rightButton.addEventListener('touchstart', () => { player.x += 10; sendDataToFirebase(); });
-        upButton.addEventListener('touchstart', () => { player.y -= 10; sendDataToFirebase(); });
-        downButton.addEventListener('touchstart', () => { player.y += 10; sendDataToFirebase(); });
-
-        const connectToNewUser = (id, otherPlayer) => {
-            const peerConnection = new RTCPeerConnection(config);
-            peers[id] = peerConnection;
-
-            localStream.getTracks().forEach((track) => peerConnection.addTrack(track, localStream));
-            peerConnection.ontrack = (event) => {
-                const [remoteStream] = event.streams;
-                addVideoStream(remoteStream, id, otherPlayer.x, otherPlayer.y);
-            };
-
-            peerConnection.createOffer().then((offer) => {
-                peerConnection.setLocalDescription(offer);
-                push(ref(db, `signals/${id}`), {
-                    from: playerId,
-                    offer: offer
-                });
-            });
-
-            onValue(ref(db, `signals/${playerId}`), (snapshot) => {
-                const signals = snapshot.val();
-                if (!signals) return;
-
-                Object.keys(signals).forEach((key) => {
-                    const { from, offer, answer } = signals[key];
-                    if (from === id && offer) {
-                        peerConnection.setRemoteDescription(new RTCSessionDescription(offer))
-                            .then(() => peerConnection.createAnswer())
-                            .then((answer) => {
-                                peerConnection.setLocalDescription(answer);
-                                push(ref(db, `signals/${from}`), { from: playerId, answer });
-                            });
-                    }
-                    if (answer) {
-                        peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-                    }
-                });
-            });
-        };
-
-        window.addEventListener('beforeunload', () => {
-            remove(ref(db, `players/${player.id}`));
-        });
-
-        sendDataToFirebase();
-    </script>
+    });
+</script>
 </body>
 </html>
