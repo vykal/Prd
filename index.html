@@ -3,78 +3,90 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kamera Stránka</title>
+    <title>Live Video Chat</title>
     <style>
         body {
             font-family: Arial, sans-serif;
-            text-align: center;
             margin: 0;
             padding: 0;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
         }
         video {
-            width: 100%;
-            max-width: 600px;
+            width: 45%;
             border: 2px solid #333;
             border-radius: 8px;
-        }
-        .controls {
-            margin-top: 20px;
-        }
-        button {
-            padding: 10px 20px;
-            margin: 5px;
-            font-size: 16px;
-            border: none;
-            border-radius: 5px;
-            background-color: #007BFF;
-            color: white;
-            cursor: pointer;
-        }
-        button:hover {
-            background-color: #0056b3;
-        }
-        button:disabled {
-            background-color: #ccc;
-            cursor: not-allowed;
         }
     </style>
 </head>
 <body>
-    <h1>Kamera na Web Stránke</h1>
-    <video id="camera" autoplay playsinline></video>
-    <div class="controls">
-        <button id="startCamera">Zapnúť kameru</button>
-        <button id="stopCamera" disabled>Vypnúť kameru</button>
-    </div>
+    <video id="localVideo" autoplay muted playsinline></video>
+    <div id="remoteVideos"></div>
 
-    <script>
-        const video = document.getElementById('camera');
-        const startButton = document.getElementById('startCamera');
-        const stopButton = document.getElementById('stopCamera');
-        let stream = null;
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.16.0/firebase-app.js";
+        import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/9.16.0/firebase-database.js";
 
-        // Spustenie kamery
-        startButton.addEventListener('click', async () => {
+        // Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
+            authDomain: "videjo-d0996.firebaseapp.com",
+            databaseURL: "https://videjo-d0996-default-rtdb.firebaseio.com/",
+            projectId: "videjo-d0996",
+            storageBucket: "videjo-d0996.appspot.com",
+            messagingSenderId: "175126755237",
+            appId: "1:175126755237:web:72a635961214f3532bda4c",
+            measurementId: "G-1MG4Q7CBDE"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        const localVideo = document.getElementById("localVideo");
+        const remoteVideosContainer = document.getElementById("remoteVideos");
+
+        // Generate unique ID for the user
+        const userId = `user-${Math.random().toString(36).substring(2, 15)}`;
+
+        let localStream;
+
+        // Access local camera
+        async function startCamera() {
             try {
-                stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: "user" } // Použitie prednej kamery, "environment" pre zadnú
-                });
-                video.srcObject = stream;
-                startButton.disabled = true;
-                stopButton.disabled = false;
-            } catch (err) {
-                alert('Nepodarilo sa získať prístup ku kamere: ' + err.message);
-            }
-        });
+                localStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                localVideo.srcObject = localStream;
 
-        // Zastavenie kamery
-        stopButton.addEventListener('click', () => {
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-                video.srcObject = null;
-                startButton.disabled = false;
-                stopButton.disabled = true;
+                // Save user stream to Firebase
+                const videoTracks = localStream.getVideoTracks();
+                set(ref(db, `users/${userId}`), { videoTrackId: videoTracks[0].id });
+
+                // Remove user from database when they leave
+                window.addEventListener("beforeunload", () => {
+                    remove(ref(db, `users/${userId}`));
+                });
+            } catch (err) {
+                console.error("Error accessing camera:", err);
             }
+        }
+
+        startCamera();
+
+        // Listen for other users' streams
+        onValue(ref(db, "users"), (snapshot) => {
+            const users = snapshot.val() || {};
+            remoteVideosContainer.innerHTML = ""; // Clear existing videos
+            Object.keys(users).forEach((key) => {
+                if (key !== userId) {
+                    const video = document.createElement("video");
+                    video.autoplay = true;
+                    video.playsinline = true;
+                    video.srcObject = localStream; // Replace with actual remote stream logic
+                    remoteVideosContainer.appendChild(video);
+                }
+            });
         });
     </script>
 </body>
