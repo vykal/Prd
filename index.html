@@ -17,17 +17,6 @@
       height: 150px;
       object-fit: cover;
     }
-    .placeholder {
-      border: 1px solid black;
-      width: 200px;
-      height: 150px;
-      background: gray;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      color: white;
-      font-weight: bold;
-    }
   </style>
 </head>
 <body>
@@ -36,7 +25,7 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-app.js";
-    import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-database.js";
+    import { getDatabase, ref, set, onValue, remove, push } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-database.js";
 
     // Firebase configuration
     const firebaseConfig = {
@@ -54,66 +43,136 @@
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
-    // Get unique user ID
+    // Unique user ID
     const userId = Math.random().toString(36).substring(2, 15);
 
-    // Function to start the camera
-    const startCamera = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    // WebRTC Configuration
+    const config = {
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+    };
+    const peers = {};
+    const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
 
-        // Display the user's own video
-        const videoElement = document.createElement('video');
-        videoElement.srcObject = stream;
-        videoElement.autoplay = true;
-        videoElement.muted = true;
-        document.getElementById('videos').appendChild(videoElement);
+    // Add local video to the DOM
+    const addVideoStream = (stream, isLocal = false) => {
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      video.autoplay = true;
+      if (isLocal) video.muted = true;
+      document.getElementById('videos').appendChild(video);
+    };
 
-        // Notify the database about the new user
-        set(ref(db, `users/${userId}`), {
-          userId,
-          timestamp: Date.now()
-        });
+    // Add local stream
+    addVideoStream(localStream, true);
 
-        return stream;
-      } catch (error) {
-        console.error("Error accessing camera:", error);
-        alert("Camera access is required to use this application.");
+    // Notify Firebase about the new user
+    set(ref(db, `users/${userId}`), { userId });
+
+    // Listen for new users
+    onValue(ref(db, "users"), (snapshot) => {
+      const users = snapshot.val();
+      for (const id in users) {
+        if (id !== userId && !peers[id]) {
+          // Create a new WebRTC connection
+          const peerConnection = new RTCPeerConnection(config);
+
+          // Add local stream to connection
+          localStream.getTracks().forEach((track) => {
+            peerConnection.addTrack(track, localStream);
+          });
+
+          // Listen for remote streams
+          peerConnection.ontrack = (event) => {
+            const [remoteStream] = event.streams;
+            if (!document.querySelector(`[data-user="${id}"]`)) {
+              addVideoStream(remoteStream);
+            }
+          };
+
+          // Exchange ICE candidates
+          peerConnection.onicecandidate = (event) => {
+            if (event.candidate) {
+              push(ref(db, `signals/${id}`), {
+                from: userId,
+                candidate: event.candidate.toJSON()
+              });
+            }
+          };
+
+          // Create an offer
+          peerConnection.createOffer()
+            .then((offer) => {
+              peerConnection.setLocalDescription(offer);
+              push(ref(db, `signals/${id}`), {
+                from: userId,
+                offer: offer
+              });
+            });
+
+          peers[id] = peerConnection;
+        }
       }
-    };
+    });
 
-    // Update videos for other users
-    const updateVideos = () => {
-      onValue(ref(db, "users"), (snapshot) => {
-        const users = snapshot.val() || {};
-        const videoContainer = document.getElementById('videos');
-        const userIds = Object.keys(users);
+    // Listen for signaling messages
+    onValue(ref(db, `signals/${userId}`), (snapshot) => {
+      const signals = snapshot.val();
+      for (const key in signals) {
+        const signal = signals[key];
+        if (signal.from !== userId) {
+          const peerConnection = peers[signal.from] || new RTCPeerConnection(config);
+          if (!peers[signal.from]) {
+            localStream.getTracks().forEach((track) => {
+              peerConnection.addTrack(track, localStream);
+            });
+            peers[signal.from] = peerConnection;
 
-        // Clear the container and re-add videos
-        videoContainer.innerHTML = "";
+            // Handle ICE candidates
+            peerConnection.onicecandidate = (event) => {
+              if (event.candidate) {
+                push(ref(db, `signals/${signal.from}`), {
+                  from: userId,
+                  candidate: event.candidate.toJSON()
+                });
+              }
+            };
 
-        userIds.forEach((id) => {
-          if (id === userId) return; // Skip own video
+            // Handle remote streams
+            peerConnection.ontrack = (event) => {
+              const [remoteStream] = event.streams;
+              if (!document.querySelector(`[data-user="${signal.from}"]`)) {
+                addVideoStream(remoteStream);
+              }
+            };
+          }
 
-          // Placeholder for other users (replace with WebRTC for real video streams)
-          const placeholder = document.createElement('div');
-          placeholder.className = 'placeholder';
-          placeholder.innerText = `User ${id}`;
-          videoContainer.appendChild(placeholder);
-        });
-      });
-    };
+          if (signal.offer) {
+            peerConnection.setRemoteDescription(new RTCSessionDescription(signal.offer))
+              .then(() => peerConnection.createAnswer())
+              .then((answer) => {
+                peerConnection.setLocalDescription(answer);
+                push(ref(db, `signals/${signal.from}`), {
+                  from: userId,
+                  answer: answer
+                });
+              });
+          }
+
+          if (signal.answer) {
+            peerConnection.setRemoteDescription(new RTCSessionDescription(signal.answer));
+          }
+
+          if (signal.candidate) {
+            peerConnection.addIceCandidate(new RTCIceCandidate(signal.candidate));
+          }
+        }
+      }
+    });
 
     // Remove user from Firebase on unload
     window.addEventListener("beforeunload", () => {
       remove(ref(db, `users/${userId}`));
     });
-
-    // Initialize
-    (async () => {
-      await startCamera();
-      updateVideos();
-    })();
   </script>
 </body>
 </html>
