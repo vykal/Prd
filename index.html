@@ -1,182 +1,216 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Multiplayer Video Movement</title>
-  <style>
-    body {
-      margin: 0;
-      overflow: hidden;
-    }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multiplayer Video Game</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
 
-    #gameCanvas {
-      display: block;
-      background: lightblue;
-    }
+        canvas {
+            display: block;
+            background: lightblue;
+        }
 
-    video {
-      position: absolute;
-      border: 2px solid black;
-      border-radius: 10px;
-      width: 150px;
-      height: 100px;
-      object-fit: cover;
-      pointer-events: none; /* Disable interaction for videos */
-    }
+        video {
+            position: absolute;
+            border: 2px solid black;
+            border-radius: 10px;
+            width: 150px;
+            height: 100px;
+            object-fit: cover;
+        }
 
-    .controls {
-      position: absolute;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      justify-content: center;
-      gap: 10px;
-    }
+        .controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+        }
 
-    .button {
-      width: 60px;
-      height: 60px;
-      background: gray;
-      color: white;
-      font-size: 20px;
-      font-weight: bold;
-      text-align: center;
-      line-height: 60px;
-      border-radius: 10px;
-      user-select: none;
-      cursor: pointer;
-    }
+        .button {
+            width: 60px;
+            height: 60px;
+            background: gray;
+            color: white;
+            font-size: 20px;
+            font-weight: bold;
+            text-align: center;
+            line-height: 60px;
+            border-radius: 10px;
+            user-select: none;
+            cursor: pointer;
+        }
 
-    .button:active {
-      background: darkgray;
-    }
-  </style>
+        .button:active {
+            background: darkgray;
+        }
+    </style>
 </head>
 <body>
 <canvas id="gameCanvas"></canvas>
 <div class="controls">
-  <div class="button" id="left">◀</div>
-  <div class="button" id="jump">⤒</div>
-  <div class="button" id="right">▶</div>
+    <div class="button" id="left">◀</div>
+    <div class="button" id="jump">⤒</div>
+    <div class="button" id="right">▶</div>
 </div>
 
 <script type="module">
-  import { initializeApp as initApp1, getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
-  import { initializeApp as initApp2 } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+    import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-  // Firebase config for movement
-  const firebaseConfigMovement = {
-    apiKey: "AIzaSyACWLI7L0zhZk7RFQyEXlOyQjtMPF-MgDw",
-    authDomain: "hrav-1a742.firebaseapp.com",
-    databaseURL: "https://hrav-1a742-default-rtdb.europe-west1.firebasedatabase.app",
-    projectId: "hrav-1a742",
-    storageBucket: "hrav-1a742.firebasestorage.app",
-    messagingSenderId: "1093772001619",
-    appId: "1:1093772001619:web:97d8e6dd9d5cd28da761a6",
-    measurementId: "G-GFVZ6ZD5RE"
-  };
+    // Firebase configuration for movement
+    const firebaseConfigMovement = {
+        apiKey: "AIzaSyACWLI7L0zhZk7RFQyEXlOyQjtMPF-MgDw",
+        authDomain: "hrav-1a742.firebaseapp.com",
+        databaseURL: "https://hrav-1a742-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "hrav-1a742",
+        storageBucket: "hrav-1a742.firebasestorage.app",
+        messagingSenderId: "1093772001619",
+        appId: "1:1093772001619:web:97d8e6dd9d5cd28da761a6",
+        measurementId: "G-GFVZ6ZD5RE"
+    };
 
-  // Firebase config for video
-  const firebaseConfigVideo = {
-    apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
-    authDomain: "videjo-d0996.firebaseapp.com",
-    databaseURL: "https://videjo-d0996-default-rtdb.europe-west1.firebasedatabase.app",
-    projectId: "videjo-d0996",
-    storageBucket: "videjo-d0996.firebasestorage.app",
-    messagingSenderId: "175126755237",
-    appId: "1:175126755237:web:8cf31d7a4d08f9fb2bda4c",
-    measurementId: "G-6Q2BJX1FE5"
-  };
+    // Firebase configuration for video
+    const firebaseConfigVideo = {
+        apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
+        authDomain: "videjo-d0996.firebaseapp.com",
+        databaseURL: "https://videjo-d0996-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "videjo-d0996",
+        storageBucket: "videjo-d0996.firebasestorage.app",
+        messagingSenderId: "175126755237",
+        appId: "1:175126755237:web:8cf31d7a4d08f9fb2bda4c",
+        measurementId: "G-6Q2BJX1FE5"
+    };
 
-  // Initialize Firebase
-  const app1 = initApp1(firebaseConfigMovement);
-  const app2 = initApp2(firebaseConfigVideo);
+    // Initialize Firebase apps
+    const appMovement = initializeApp(firebaseConfigMovement, "movement");
+    const appVideo = initializeApp(firebaseConfigVideo, "video");
+    const dbMovement = getDatabase(appMovement);
+    const dbVideo = getDatabase(appVideo);
 
-  const dbMovement = getDatabase(app1);
-  const dbVideo = getDatabase(app2);
+    const canvas = document.getElementById('gameCanvas');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
 
-  // Canvas setup
-  const canvas = document.getElementById('gameCanvas');
-  const ctx = canvas.getContext('2d');
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+    const playerId = `player_${Math.random().toString(36).substring(2, 9)}`;
+    const players = {};
 
-  // Unique player ID
-  const playerId = `player_${Math.random().toString(36).substring(2, 9)}`;
-  const players = {};
+    // Player object
+    const player = {
+        id: playerId,
+        x: Math.random() * (canvas.width - 150),
+        y: canvas.height - 150,
+        width: 150,
+        height: 100,
+        dx: 0,
+        dy: 0,
+        isJumping: false,
+        grounded: true
+    };
 
-  // Local video stream
-  const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-  const videoElement = document.createElement('video');
-  videoElement.srcObject = localStream;
-  videoElement.autoplay = true;
-  videoElement.muted = true;
-  videoElement.id = playerId;
-  document.body.appendChild(videoElement);
-
-  const player = {
-    id: playerId,
-    x: Math.random() * (canvas.width - 150),
-    y: canvas.height - 100,
-    width: 150,
-    height: 100
-  };
-
-  function movePlayer() {
-    player.x += player.dx || 0;
-    player.y += player.dy || 0;
-
-    // Boundaries
-    player.x = Math.max(0, Math.min(player.x, canvas.width - player.width));
-    player.y = Math.max(0, Math.min(player.y, canvas.height - player.height));
-
+    // Setup video stream
+    const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    const videoElement = document.createElement('video');
+    videoElement.srcObject = localStream;
+    videoElement.autoplay = true;
+    videoElement.muted = true;
+    videoElement.style.position = "absolute";
     videoElement.style.left = `${player.x}px`;
     videoElement.style.top = `${player.y}px`;
+    document.body.appendChild(videoElement);
 
-    set(ref(dbMovement, `players/${player.id}`), player);
-  }
+    // Send player data to Firebase
+    function sendPlayerData() {
+        set(ref(dbMovement, `players/${playerId}`), {
+            ...player,
+            streamId: localStream.id
+        });
+    }
 
-  // Touch controls
-  const leftButton = document.getElementById('left');
-  const rightButton = document.getElementById('right');
-  const jumpButton = document.getElementById('jump');
+    // Handle player movement
+    function movePlayer() {
+        player.x += player.dx;
 
-  leftButton.addEventListener('mousedown', () => (player.dx = -5));
-  rightButton.addEventListener('mousedown', () => (player.dx = 5));
-  jumpButton.addEventListener('mousedown', () => (player.dy = -5));
-  window.addEventListener('mouseup', () => (player.dx = player.dy = 0));
+        // Apply gravity
+        if (!player.grounded) {
+            player.dy += 0.8;
+            player.y += player.dy;
+        }
 
-  // Firebase player synchronization
-  onValue(ref(dbMovement, 'players'), (snapshot) => {
-    const data = snapshot.val() || {};
-    Object.keys(data).forEach((id) => {
-      if (!players[id]) {
-        const newVideo = document.createElement('video');
-        newVideo.id = id;
-        newVideo.style.position = 'absolute';
-        newVideo.style.width = '150px';
-        newVideo.style.height = '100px';
-        document.body.appendChild(newVideo);
-        players[id] = newVideo;
-      }
-      const { x, y } = data[id];
-      players[id].style.left = `${x}px`;
-      players[id].style.top = `${y}px`;
+        // Collision with ground
+        if (player.y + player.height >= canvas.height) {
+            player.y = canvas.height - player.height;
+            player.dy = 0;
+            player.grounded = true;
+        }
+
+        // Boundary checks
+        if (player.x < 0) player.x = 0;
+        if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+
+        videoElement.style.left = `${player.x}px`;
+        videoElement.style.top = `${player.y}px`;
+    }
+
+    // Handle remote players
+    onValue(ref(dbMovement, 'players'), (snapshot) => {
+        const data = snapshot.val() || {};
+        Object.keys(data).forEach((id) => {
+            if (id === playerId) return;
+
+            if (!players[id]) {
+                const newVideo = document.createElement('video');
+                newVideo.style.position = 'absolute';
+                newVideo.style.width = '150px';
+                newVideo.style.height = '100px';
+                document.body.appendChild(newVideo);
+                players[id] = { ...data[id], videoElement: newVideo };
+            }
+
+            const remotePlayer = players[id];
+            remotePlayer.x = data[id].x;
+            remotePlayer.y = data[id].y;
+            remotePlayer.videoElement.style.left = `${remotePlayer.x}px`;
+            remotePlayer.videoElement.style.top = `${remotePlayer.y}px`;
+        });
     });
-  });
 
-  // Remove player on disconnect
-  window.addEventListener('beforeunload', () => remove(ref(dbMovement, `players/${player.id}`)));
+    // Controls
+    const leftButton = document.getElementById('left');
+    const rightButton = document.getElementById('right');
+    const jumpButton = document.getElementById('jump');
 
-  // Update game
-  function update() {
-    movePlayer();
-    requestAnimationFrame(update);
-  }
+    leftButton.addEventListener('mousedown', () => (player.dx = -5));
+    rightButton.addEventListener('mousedown', () => (player.dx = 5));
+    jumpButton.addEventListener('mousedown', () => {
+        if (player.grounded) {
+            player.dy = -15;
+            player.grounded = false;
+        }
+    });
 
-  update();
+    window.addEventListener('mouseup', () => (player.dx = 0));
+
+    // Remove player on disconnect
+    window.addEventListener('beforeunload', () => {
+        remove(ref(dbMovement, `players/${playerId}`));
+    });
+
+    // Game loop
+    function update() {
+        movePlayer();
+        sendPlayerData();
+        requestAnimationFrame(update);
+    }
+
+    update();
 </script>
 </body>
 </html>
