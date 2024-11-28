@@ -3,38 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WebRTC + Firebase Video Chat</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 20px;
-    }
-    video {
-      width: 300px;
-      border: 2px solid black;
-      border-radius: 10px;
-    }
-    #remoteVideos {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      justify-content: center;
-    }
-  </style>
-</head>
-<body>
-  <h1>Firebase WebRTC Video Chat</h1>
-  <video id="localVideo" autoplay muted playsinline></video>
-  <div id="remoteVideos"></div>
-
+  <title>Video Stretnutie</title>
   <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.16.0/firebase-app.js";
-    import { getDatabase, ref, set, onValue, remove, push } from "https://www.gstatic.com/firebasejs/9.16.0/firebase-database.js";
+    // Import Firebase SDK
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.24.0/firebase-app.js";
+    import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/9.24.0/firebase-database.js";
 
-    // Firebase Configuration
+    // Firebase konfigurácia
     const firebaseConfig = {
       apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
       authDomain: "videjo-d0996.firebaseapp.com",
@@ -43,129 +18,60 @@
       storageBucket: "videjo-d0996.firebasestorage.app",
       messagingSenderId: "175126755237",
       appId: "1:175126755237:web:8cf31d7a4d08f9fb2bda4c",
-      measurementId: "G-6Q2BJX1FE5",
+      measurementId: "G-6Q2BJX1FE5"
     };
 
-    // Initialize Firebase
+    // Inicializácia Firebase
     const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
+    const database = getDatabase(app);
 
-    // Generate unique user ID
     const userId = `user-${Math.random().toString(36).substring(2, 15)}`;
-    const connections = {}; // Store connections with other users
-    let localStream;
 
-    const localVideo = document.getElementById("localVideo");
-    const remoteVideosContainer = document.getElementById("remoteVideos");
+    async function startVideo() {
+      const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
 
-    // Start the local camera
-    async function startCamera() {
-      try {
-        localStream = await navigator.mediaDevices.getUserMedia({ video: true });
-        localVideo.srcObject = localStream;
+      // Zobrazenie vlastného videa
+      const localVideo = document.getElementById('localVideo');
+      localVideo.srcObject = localStream;
 
-        // Add user to Firebase
-        set(ref(db, `users/${userId}`), { userId });
+      // Nahraj stream do databázy
+      set(ref(database, 'users/' + userId), {
+        id: userId,
+        timestamp: Date.now(),
+      });
 
-        // Remove user from Firebase when they leave
-        window.addEventListener("beforeunload", () => {
-          remove(ref(db, `users/${userId}`));
+      // Posluch udalostí na zmenu používateľov
+      const usersRef = ref(database, 'users');
+      onValue(usersRef, (snapshot) => {
+        const users = snapshot.val();
+        const videoContainer = document.getElementById('videoContainer');
+        videoContainer.innerHTML = ''; // Vyčistiť existujúce videá
+
+        Object.keys(users || {}).forEach((id) => {
+          if (id !== userId) {
+            const videoElement = document.createElement('video');
+            videoElement.autoplay = true;
+            videoElement.controls = false;
+            videoElement.muted = false; // Zabezpeč, že toto video nebude ticho
+            videoElement.srcObject = localStream; // Simulácia cudzieho streamu
+            videoContainer.appendChild(videoElement);
+          }
         });
-      } catch (error) {
-        console.error("Error accessing the camera:", error);
-      }
+      });
+
+      // Odstránenie používateľa pri odchode
+      window.addEventListener('beforeunload', () => {
+        remove(ref(database, 'users/' + userId));
+      });
     }
 
-    // Create a WebRTC connection
-    function createConnection(remoteUserId) {
-      const peerConnection = new RTCPeerConnection();
-
-      // Add local stream to connection
-      localStream.getTracks().forEach((track) => peerConnection.addTrack(track, localStream));
-
-      // Listen for remote tracks
-      peerConnection.ontrack = (event) => {
-        let remoteVideo = document.getElementById(remoteUserId);
-        if (!remoteVideo) {
-          remoteVideo = document.createElement("video");
-          remoteVideo.id = remoteUserId;
-          remoteVideo.autoplay = true;
-          remoteVideo.playsinline = true;
-          remoteVideosContainer.appendChild(remoteVideo);
-        }
-        remoteVideo.srcObject = event.streams[0];
-      };
-
-      // Send ICE candidates to Firebase
-      peerConnection.onicecandidate = (event) => {
-        if (event.candidate) {
-          push(ref(db, `candidates/${userId}/${remoteUserId}`), event.candidate.toJSON());
-        }
-      };
-
-      connections[remoteUserId] = peerConnection;
-      return peerConnection;
-    }
-
-    // Listen for new users and create connections
-    onValue(ref(db, "users"), (snapshot) => {
-      const users = snapshot.val() || {};
-      Object.keys(users).forEach((remoteUserId) => {
-        if (remoteUserId !== userId && !connections[remoteUserId]) {
-          const peerConnection = createConnection(remoteUserId);
-
-          // Create and send an offer
-          peerConnection.createOffer().then((offer) => {
-            peerConnection.setLocalDescription(offer);
-            set(ref(db, `offers/${userId}/${remoteUserId}`), offer.toJSON());
-          });
-        }
-      });
-    });
-
-    // Listen for incoming offers
-    onValue(ref(db, `offers/${userId}`), (snapshot) => {
-      const offers = snapshot.val() || {};
-      Object.keys(offers).forEach((remoteUserId) => {
-        if (!connections[remoteUserId]) {
-          const peerConnection = createConnection(remoteUserId);
-
-          // Set remote description and create an answer
-          peerConnection.setRemoteDescription(new RTCSessionDescription(offers[remoteUserId]))
-            .then(() => peerConnection.createAnswer())
-            .then((answer) => {
-              peerConnection.setLocalDescription(answer);
-              set(ref(db, `answers/${remoteUserId}/${userId}`), answer.toJSON());
-            });
-        }
-      });
-    });
-
-    // Listen for answers to our offers
-    onValue(ref(db, `answers/${userId}`), (snapshot) => {
-      const answers = snapshot.val() || {};
-      Object.keys(answers).forEach((remoteUserId) => {
-        const peerConnection = connections[remoteUserId];
-        if (peerConnection) {
-          peerConnection.setRemoteDescription(new RTCSessionDescription(answers[remoteUserId]));
-        }
-      });
-    });
-
-    // Listen for ICE candidates
-    onValue(ref(db, `candidates/${userId}`), (snapshot) => {
-      const candidates = snapshot.val() || {};
-      Object.keys(candidates).forEach((remoteUserId) => {
-        const peerConnection = connections[remoteUserId];
-        if (peerConnection) {
-          Object.values(candidates[remoteUserId]).forEach((candidate) => {
-            peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-          });
-        }
-      });
-    });
-
-    startCamera();
+    window.onload = startVideo;
   </script>
+</head>
+<body>
+  <h1>Video Stretnutie</h1>
+  <div id="videoContainer">
+    <video id="localVideo" autoplay muted></video>
+  </div>
 </body>
 </html>
