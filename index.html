@@ -4,12 +4,18 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Video Stretnutie</title>
+  <style>
+    video {
+      width: 200px;
+      height: 150px;
+      margin: 10px;
+      border: 2px solid #000;
+    }
+  </style>
   <script type="module">
-    // Import Firebase SDK
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.24.0/firebase-app.js";
-    import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/9.24.0/firebase-database.js";
+    import { getDatabase, ref, set, onValue, remove, onDisconnect } from "https://www.gstatic.com/firebasejs/9.24.0/firebase-database.js";
 
-    // Firebase konfigurácia
     const firebaseConfig = {
       apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
       authDomain: "videjo-d0996.firebaseapp.com",
@@ -21,51 +27,53 @@
       measurementId: "G-6Q2BJX1FE5"
     };
 
-    // Inicializácia Firebase
     const app = initializeApp(firebaseConfig);
     const database = getDatabase(app);
 
-    const userId = `user-${Math.random().toString(36).substring(2, 15)}`;
+    const userId = `user-${Math.random().toString(36).substr(2, 9)}`;
 
-    async function startVideo() {
+    async function startVideoMeeting() {
+      // Získanie vlastného video streamu
       const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
 
       // Zobrazenie vlastného videa
-      const localVideo = document.getElementById('localVideo');
+      const localVideo = document.getElementById("localVideo");
       localVideo.srcObject = localStream;
 
-      // Nahraj stream do databázy
-      set(ref(database, 'users/' + userId), {
-        id: userId,
-        timestamp: Date.now(),
-      });
+      // Zápis údajov o používateľovi do databázy
+      const userRef = ref(database, `users/${userId}`);
+      await set(userRef, { id: userId });
 
-      // Posluch udalostí na zmenu používateľov
-      const usersRef = ref(database, 'users');
+      // Odstránenie z databázy pri odchode
+      onDisconnect(userRef).remove();
+
+      // Poslucháč na zmeny v databáze
+      const usersRef = ref(database, "users");
       onValue(usersRef, (snapshot) => {
-        const users = snapshot.val();
-        const videoContainer = document.getElementById('videoContainer');
-        videoContainer.innerHTML = ''; // Vyčistiť existujúce videá
+        const users = snapshot.val() || {};
+        const videoContainer = document.getElementById("videoContainer");
 
-        Object.keys(users || {}).forEach((id) => {
-          if (id !== userId) {
-            const videoElement = document.createElement('video');
-            videoElement.autoplay = true;
-            videoElement.controls = false;
-            videoElement.muted = false; // Zabezpeč, že toto video nebude ticho
-            videoElement.srcObject = localStream; // Simulácia cudzieho streamu
-            videoContainer.appendChild(videoElement);
+        // Vyčistiť kontajner a pridať nové videá
+        videoContainer.innerHTML = "";
+        Object.keys(users).forEach((id) => {
+          const videoElement = document.createElement("video");
+          videoElement.autoplay = true;
+          videoElement.controls = false;
+          videoElement.muted = id === userId;
+
+          // Ak id je vlastné, používame vlastný stream, inak simulujeme
+          if (id === userId) {
+            videoElement.srcObject = localStream;
+          } else {
+            // Simulácia cudzieho streamu (v realite by sme tu použili WebRTC)
+            videoElement.src = "https://via.placeholder.com/300x200?text=User+" + id;
           }
+          videoContainer.appendChild(videoElement);
         });
-      });
-
-      // Odstránenie používateľa pri odchode
-      window.addEventListener('beforeunload', () => {
-        remove(ref(database, 'users/' + userId));
       });
     }
 
-    window.onload = startVideo;
+    window.onload = startVideoMeeting;
   </script>
 </head>
 <body>
