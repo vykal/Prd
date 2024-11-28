@@ -1,97 +1,107 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Video Chat</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 10px;
-        }
-        video {
-            width: 45%;
-            border: 2px solid #333;
-            border-radius: 8px;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Firebase Realtime Video Chat</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+    }
+    video {
+      width: 45%;
+      border: 2px solid black;
+      border-radius: 10px;
+    }
+    #remoteVideos {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+    }
+  </style>
 </head>
 <body>
-    <video id="localVideo" autoplay muted playsinline></video>
-    <div id="remoteVideos"></div>
+  <h1>Firebase Realtime Video Chat</h1>
+  <video id="localVideo" autoplay muted playsinline></video>
+  <div id="remoteVideos"></div>
 
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.16.0/firebase-app.js";
-        import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/9.16.0/firebase-database.js";
+  <script type="module">
+    // Import Firebase SDK
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.16.0/firebase-app.js";
+    import { getAnalytics } from "https://www.gstatic.com/firebasejs/9.16.0/firebase-analytics.js";
+    import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/9.16.0/firebase-database.js";
 
-        // Firebase Configuration
-        const firebaseConfig = {
-            apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
-            authDomain: "videjo-d0996.firebaseapp.com",
-            databaseURL: "https://videjo-d0996-default-rtdb.firebaseio.com/",
-            projectId: "videjo-d0996",
-            storageBucket: "videjo-d0996.appspot.com",
-            messagingSenderId: "175126755237",
-            appId: "1:175126755237:web:72a635961214f3532bda4c",
-            measurementId: "G-1MG4Q7CBDE"
-        };
+    // Firebase Configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
+      authDomain: "videjo-d0996.firebaseapp.com",
+      databaseURL: "https://videjo-d0996-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId: "videjo-d0996",
+      storageBucket: "videjo-d0996.firebasestorage.app",
+      messagingSenderId: "175126755237",
+      appId: "1:175126755237:web:8cf31d7a4d08f9fb2bda4c",
+      measurementId: "G-6Q2BJX1FE5",
+    };
 
-        // Initialize Firebase
-        const app = initializeApp(firebaseConfig);
-        const db = getDatabase(app);
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const analytics = getAnalytics(app);
+    const db = getDatabase(app);
 
+    // Generate unique user ID
+    const userId = `user-${Math.random().toString(36).substring(2, 15)}`;
+    let localStream;
+
+    // Access local camera
+    async function startCamera() {
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true });
         const localVideo = document.getElementById("localVideo");
-        const remoteVideosContainer = document.getElementById("remoteVideos");
+        localVideo.srcObject = localStream;
 
-        // Generate unique ID for the user
-        const userId = `user-${Math.random().toString(36).substring(2, 15)}`;
+        // Save user stream info to Firebase
+        set(ref(db, `users/${userId}`), { active: true });
 
-        let localStream;
-
-        // Access local camera
-        async function startCamera() {
-            try {
-                localStream = await navigator.mediaDevices.getUserMedia({ video: true });
-                localVideo.srcObject = localStream;
-
-                // Save user stream to Firebase
-                set(ref(db, `users/${userId}`), { 
-                    stream: true 
-                });
-
-                // Remove user from database when they leave
-                window.addEventListener("beforeunload", () => {
-                    remove(ref(db, `users/${userId}`));
-                });
-            } catch (err) {
-                console.error("Error accessing camera:", err);
-            }
-        }
-
-        startCamera();
-
-        // Listen for other users' streams
-        onValue(ref(db, "users"), (snapshot) => {
-            const users = snapshot.val() || {};
-            remoteVideosContainer.innerHTML = ""; // Clear existing videos
-
-            Object.keys(users).forEach((key) => {
-                if (key !== userId) {
-                    const video = document.createElement("video");
-                    video.autoplay = true;
-                    video.playsinline = true;
-
-                    // For demo purposes, we don't have real streams from others yet
-                    video.textContent = `Placeholder for ${key}`;
-                    remoteVideosContainer.appendChild(video);
-                }
-            });
+        // Remove user from database when they leave
+        window.addEventListener("beforeunload", () => {
+          remove(ref(db, `users/${userId}`));
         });
-    </script>
+      } catch (error) {
+        console.error("Error accessing the camera:", error);
+      }
+    }
+
+    // Listen for other users in the database
+    function listenForUsers() {
+      const usersRef = ref(db, "users");
+      onValue(usersRef, (snapshot) => {
+        const users = snapshot.val();
+        const remoteVideosContainer = document.getElementById("remoteVideos");
+        remoteVideosContainer.innerHTML = ""; // Clear existing videos
+
+        for (const [key, value] of Object.entries(users || {})) {
+          if (key !== userId) {
+            // Placeholder for remote users
+            const videoElement = document.createElement("video");
+            videoElement.autoplay = true;
+            videoElement.playsinline = true;
+            videoElement.textContent = `Placeholder for ${key}`;
+            remoteVideosContainer.appendChild(videoElement);
+          }
+        }
+      });
+    }
+
+    // Initialize camera and Firebase listeners
+    startCamera();
+    listenForUsers();
+  </script>
 </body>
 </html>
