@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Video Stretnutie</title>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js"></script>
     <style>
         body {
             display: flex;
@@ -26,11 +26,12 @@
     </style>
 </head>
 <body>
-    <script>
-        // Firebase konfigurácia
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
-        import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
+    <script type="module">
+        // Import potrebných knižníc Firebase
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+        import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
+        // Firebase konfigurácia
         const firebaseConfig = {
             apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
             authDomain: "videjo-d0996.firebaseapp.com",
@@ -42,14 +43,14 @@
             measurementId: "G-6Q2BJX1FE5"
         };
 
-        // Inicializácia Firebase
+        // Inicializácia Firebase aplikácie
         const app = initializeApp(firebaseConfig);
         const database = getDatabase(app);
 
         // Generovanie jedinečného ID pre používateľa
         const userId = `user_${Math.random().toString(36).substr(2, 9)}`;
 
-        // Video element na zobrazovanie vlastnej kamery
+        // Video element pre lokálny stream
         const localVideo = document.createElement("video");
         localVideo.autoplay = true;
         localVideo.muted = true;
@@ -60,7 +61,7 @@
             .then(stream => {
                 localVideo.srcObject = stream;
 
-                // Odoslanie dát do Firebase
+                // Uloženie údajov používateľa do databázy
                 const userRef = ref(database, `users/${userId}`);
                 set(userRef, { id: userId, timestamp: Date.now() });
 
@@ -73,7 +74,7 @@
                 console.error("Prístup ku kamere bol zamietnutý:", err);
             });
 
-        // Načítanie všetkých pripojených používateľov
+        // Načítanie zoznamu pripojených používateľov
         const usersRef = ref(database, "users");
         onValue(usersRef, snapshot => {
             const users = snapshot.val();
@@ -87,8 +88,8 @@
                         remoteVideo.autoplay = true;
                         document.body.appendChild(remoteVideo);
 
-                        // Tu by bol implementovaný kód na získanie streamu od iných používateľov
-                        // Napr. cez WebRTC, ale pre jednoduchosť tento krok preskakujeme.
+                        // V tomto kóde sa video stream iných používateľov nezobrazuje.
+                        // Na zdieľanie video streamov by sa musel implementovať WebRTC.
                     }
                 });
             }
