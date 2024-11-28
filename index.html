@@ -50,8 +50,9 @@
     const config = {
       iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
     };
+
     const peers = {}; // Store peer connections
-    const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
 
     // Add local video to DOM
     const addVideoStream = (stream, id) => {
@@ -157,8 +158,10 @@
           peers[from] = peerConnection;
         }
 
-        if (offer) {
-          peerConnection.setRemoteDescription(new RTCSessionDescription(offer))
+        // Handle offer
+        if (offer && peerConnection.signalingState === "stable") {
+          peerConnection
+            .setRemoteDescription(new RTCSessionDescription(offer))
             .then(() => peerConnection.createAnswer())
             .then((answer) => {
               peerConnection.setLocalDescription(answer);
@@ -166,15 +169,22 @@
                 from: userId,
                 answer,
               });
-            });
+            })
+            .catch((error) => console.error("Error handling offer:", error));
         }
 
-        if (answer) {
-          peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+        // Handle answer
+        if (answer && peerConnection.signalingState === "have-local-offer") {
+          peerConnection
+            .setRemoteDescription(new RTCSessionDescription(answer))
+            .catch((error) => console.error("Error handling answer:", error));
         }
 
+        // Handle ICE candidates
         if (candidate) {
-          peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+          peerConnection
+            .addIceCandidate(new RTCIceCandidate(candidate))
+            .catch((error) => console.error("Error adding ICE candidate:", error));
         }
       }
     });
