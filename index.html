@@ -11,11 +11,6 @@
       background: lightblue;
     }
 
-    canvas {
-      display: block;
-      background: lightblue;
-    }
-
     .controls {
       position: absolute;
       bottom: 20px;
@@ -44,14 +39,6 @@
       background: darkgray;
     }
 
-    #videos {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-    }
-
     video {
       position: absolute;
       width: 150px;
@@ -63,7 +50,6 @@
   </style>
 </head>
 <body>
-<div id="videos"></div>
 <div class="controls">
   <div class="button" id="left">◀</div>
   <div class="button" id="jump">⤒</div>
@@ -74,19 +60,8 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
   import { getDatabase, ref, set, onValue, remove, push } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-  // Firebase configuration for both databases
-  const firebaseConfig1 = {
-    apiKey: "AIzaSyACWLI7L0zhZk7RFQyEXlOyQjtMPF-MgDw",
-    authDomain: "hrav-1a742.firebaseapp.com",
-    databaseURL: "https://hrav-1a742-default-rtdb.europe-west1.firebasedatabase.app",
-    projectId: "hrav-1a742",
-    storageBucket: "hrav-1a742.appspot.com",
-    messagingSenderId: "1093772001619",
-    appId: "1:1093772001619:web:97d8e6dd9d5cd28da761a6",
-    measurementId: "G-GFVZ6ZD5RE"
-  };
-
-  const firebaseConfig2 = {
+  // Firebase configuration
+  const firebaseConfig = {
     apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
     authDomain: "videjo-d0996.firebaseapp.com",
     databaseURL: "https://videjo-d0996-default-rtdb.europe-west1.firebasedatabase.app",
@@ -97,11 +72,8 @@
     measurementId: "G-6Q2BJX1FE5"
   };
 
-  const app1 = initializeApp(firebaseConfig1, "App1");
-  const db1 = getDatabase(app1);
-
-  const app2 = initializeApp(firebaseConfig2, "App2");
-  const db2 = getDatabase(app2);
+  const app = initializeApp(firebaseConfig);
+  const db = getDatabase(app);
 
   // Generate unique player ID
   const playerId = `player_${Math.random().toString(36).substring(2, 9)}`;
@@ -109,85 +81,87 @@
     id: playerId,
     x: Math.random() * window.innerWidth,
     y: window.innerHeight - 150,
-    width: 150,
-    height: 150,
     dx: 0,
     dy: 0,
     grounded: true
   };
 
   const players = {};
-  const videos = document.getElementById('videos');
-  const peers = {};
+
   const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
 
-  // Add video stream to DOM
-  function addVideoStream(stream, id) {
-    let video = document.querySelector(`video[data-user-id="${id}"]`);
+  // Add video to DOM
+  function addVideo(id, stream) {
+    let video = document.querySelector(`video[data-id="${id}"]`);
     if (!video) {
       video = document.createElement('video');
-      video.dataset.userId = id;
+      video.dataset.id = id;
       video.autoplay = true;
       video.muted = id === playerId;
-      videos.appendChild(video);
+      document.body.appendChild(video);
     }
     video.srcObject = stream;
-    video.style.left = `${players[id].x}px`;
-    video.style.top = `${players[id].y}px`;
+    return video;
   }
 
-  // Update player position and broadcast to Firebase
-  function updatePlayerPosition() {
-    player.x += player.dx;
-    if (!player.grounded) player.dy += 0.8;
-    player.y += player.dy;
-
-    if (player.y + player.height >= window.innerHeight) {
-      player.y = window.innerHeight - player.height;
-      player.dy = 0;
-      player.grounded = true;
+  // Update video position
+  function updateVideoPosition(id, x, y) {
+    const video = document.querySelector(`video[data-id="${id}"]`);
+    if (video) {
+      video.style.left = `${x}px`;
+      video.style.top = `${y}px`;
     }
-
-    if (player.x < 0) player.x = 0;
-    if (player.x + player.width > window.innerWidth) player.x = window.innerWidth - player.width;
-
-    set(ref(db1, `players/${playerId}`), player);
   }
 
-  // Sync players and update video positions
-  onValue(ref(db1, 'players'), (snapshot) => {
-    const data = snapshot.val() || {};
-    Object.keys(data).forEach(id => {
-      if (!players[id]) players[id] = data[id];
-      if (id !== playerId) addVideoStream(peers[id]?.remoteStream, id);
-    });
-  });
-
-  // WebRTC setup
-  async function setupWebRTC() {
-    // WebRTC connection logic (similar to the video meeting code)
-    // ...
-    // On track event:
-    // addVideoStream(event.streams[0], remoteUserId);
-  }
-
-  setupWebRTC();
-
-  // Controls
-  document.getElementById('left').addEventListener('mousedown', () => player.dx = -5);
-  document.getElementById('right').addEventListener('mousedown', () => player.dx = 5);
+  // Movement logic
+  document.getElementById('left').addEventListener('mousedown', () => (player.dx = -5));
+  document.getElementById('right').addEventListener('mousedown', () => (player.dx = 5));
   document.getElementById('jump').addEventListener('mousedown', () => {
     if (player.grounded) {
       player.dy = -15;
       player.grounded = false;
     }
   });
+  document.addEventListener('mouseup', () => (player.dx = 0));
 
-  document.addEventListener('mouseup', () => player.dx = 0);
+  function updatePlayer() {
+    player.x += player.dx;
+    if (!player.grounded) {
+      player.dy += 0.8;
+    }
+    player.y += player.dy;
 
-  // Main loop
+    if (player.y > window.innerHeight - 150) {
+      player.y = window.innerHeight - 150;
+      player.grounded = true;
+      player.dy = 0;
+    }
+
+    player.x = Math.max(0, Math.min(player.x, window.innerWidth - 150));
+    set(ref(db, `players/${player.id}`), player);
+  }
+
+  // Sync players and update video positions
+  onValue(ref(db, 'players'), (snapshot) => {
+    const data = snapshot.val() || {};
+    Object.keys(data).forEach((id) => {
+      if (!players[id]) {
+        players[id] = data[id];
+        addVideo(id, localStream); // Add video stream for the new player
+      } else {
+        players[id] = data[id];
+      }
+      updateVideoPosition(id, players[id].x, players[id].y);
+    });
+  });
+
+  // Remove player on disconnect
+  window.addEventListener('beforeunload', () => {
+    remove(ref(db, `players/${player.id}`));
+  });
+
   function gameLoop() {
-    updatePlayerPosition();
+    updatePlayer();
     requestAnimationFrame(gameLoop);
   }
 
