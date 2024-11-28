@@ -3,12 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kamera Test</title>
+    <title>Kamera Stránka</title>
     <style>
         body {
             font-family: Arial, sans-serif;
             text-align: center;
-            padding: 20px;
+            margin: 0;
+            padding: 0;
         }
         video {
             width: 100%;
@@ -16,36 +17,63 @@
             border: 2px solid #333;
             border-radius: 8px;
         }
-        .error {
-            color: red;
+        .controls {
             margin-top: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            background-color: #007BFF;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
         }
     </style>
 </head>
 <body>
-    <h1>Kamera Test</h1>
+    <h1>Kamera na Web Stránke</h1>
     <video id="camera" autoplay playsinline></video>
-    <p id="status">Stav: čaká sa na spustenie kamery...</p>
-    <div class="error" id="error"></div>
-    <button id="startCamera">Zapnúť kameru</button>
+    <div class="controls">
+        <button id="startCamera">Zapnúť kameru</button>
+        <button id="stopCamera" disabled>Vypnúť kameru</button>
+    </div>
 
     <script>
         const video = document.getElementById('camera');
-        const status = document.getElementById('status');
-        const errorDisplay = document.getElementById('error');
         const startButton = document.getElementById('startCamera');
+        const stopButton = document.getElementById('stopCamera');
+        let stream = null;
 
+        // Spustenie kamery
         startButton.addEventListener('click', async () => {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { facingMode: "user" } // Použitie prednej kamery
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "user" } // Použitie prednej kamery, "environment" pre zadnú
                 });
                 video.srcObject = stream;
-                status.textContent = "Kamera úspešne spustená!";
-                errorDisplay.textContent = "";
+                startButton.disabled = true;
+                stopButton.disabled = false;
             } catch (err) {
-                status.textContent = "Chyba pri spustení kamery.";
-                errorDisplay.textContent = "Chyba: " + err.message;
+                alert('Nepodarilo sa získať prístup ku kamere: ' + err.message);
+            }
+        });
+
+        // Zastavenie kamery
+        stopButton.addEventListener('click', () => {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                video.srcObject = null;
+                startButton.disabled = false;
+                stopButton.disabled = true;
             }
         });
     </script>
