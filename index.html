@@ -17,197 +17,228 @@
       height: 150px;
       object-fit: cover;
     }
+    #clearDatabaseButton {
+      margin: 20px;
+      padding: 10px 20px;
+      background-color: red;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    #clearDatabaseButton:hover {
+      background-color: darkred;
+    }
   </style>
 </head>
 <body>
   <h1>Video Meeting</h1>
+  <button id="clearDatabaseButton">Odstrániť všetkých používateľov</button>
   <div id="videos"></div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-app.js";
-    import { getDatabase, ref, set, onValue, remove, push } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-database.js";
+import { getDatabase, ref, set, onValue, remove, push } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-database.js";
 
-    // Firebase configuration
-    const firebaseConfig = {
-      apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
-      authDomain: "videjo-d0996.firebaseapp.com",
-      databaseURL: "https://videjo-d0996-default-rtdb.europe-west1.firebasedatabase.app",
-      projectId: "videjo-d0996",
-      storageBucket: "videjo-d0996.firebasestorage.app",
-      messagingSenderId: "175126755237",
-      appId: "1:175126755237:web:8cf31d7a4d08f9fb2bda4c",
-      measurementId: "G-6Q2BJX1FE5"
-    };
+// Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
+  authDomain: "videjo-d0996.firebaseapp.com",
+  databaseURL: "https://videjo-d0996-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "videjo-d0996",
+  storageBucket: "videjo-d0996.firebasestorage.app",
+  messagingSenderId: "175126755237",
+  appId: "1:175126755237:web:8cf31d7a4d08f9fb2bda4c",
+  measurementId: "G-6Q2BJX1FE5"
+};
 
-    // Initialize Firebase
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
 
-    // Unique user ID
-    const userId = Math.random().toString(36).substring(2, 15);
+// Unique user ID
+const userId = Math.random().toString(36).substring(2, 15);
 
-    // WebRTC configuration
-    const config = {
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
-    };
+// WebRTC configuration
+const config = {
+  iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+};
 
-    const peers = {}; // Store peer connections
-    const pendingCandidates = {}; // Store ICE candidates temporarily
-    const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+const peers = {}; // Store peer connections
+const pendingCandidates = {}; // Store ICE candidates temporarily
+const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
 
-    // Add local video to DOM
-    const addVideoStream = (stream, id) => {
-      const video = document.createElement("video");
-      video.srcObject = stream;
-      video.autoplay = true;
-      video.muted = id === userId; // Mute local stream
-      video.dataset.userId = id;
-      document.getElementById("videos").appendChild(video);
-    };
+// Add local video to DOM
+const addVideoStream = (stream, id) => {
+  const video = document.createElement("video");
+  video.srcObject = stream;
+  video.autoplay = true;
+  video.muted = id === userId; // Mute local stream
+  video.dataset.userId = id;
+  document.getElementById("videos").appendChild(video);
+};
 
-    // Add local stream to page
-    addVideoStream(localStream, userId);
+// Add local stream to page
+addVideoStream(localStream, userId);
 
-    // Notify Firebase about new user
-    set(ref(db, `users/${userId}`), { userId });
+// Notify Firebase about new user
+set(ref(db, `users/${userId}`), { userId });
 
-    // Handle user disconnection
-    window.addEventListener("beforeunload", () => {
-      remove(ref(db, `users/${userId}`));
+// Handle user disconnection
+window.addEventListener("beforeunload", () => {
+  remove(ref(db, `users/${userId}`));
+});
+
+// SDP cleaner function
+const cleanSDP = (sdp) => {
+  return sdp.replace(/a=extmap:.+?\n/g, ''); // Remove incompatible extmap lines
+};
+
+// Listen for new users
+onValue(ref(db, "users"), (snapshot) => {
+  const users = snapshot.val();
+  for (const id in users) {
+    if (id !== userId && !peers[id]) {
+      connectToNewUser(id);
+    }
+  }
+});
+
+// WebRTC signaling logic
+const connectToNewUser = (id) => {
+  const peerConnection = new RTCPeerConnection(config);
+
+  // Add local stream tracks
+  localStream.getTracks().forEach((track) => {
+    peerConnection.addTrack(track, localStream);
+  });
+
+  // Send ICE candidates to Firebase
+  peerConnection.onicecandidate = (event) => {
+    if (event.candidate) {
+      push(ref(db, `signals/${id}`), {
+        from: userId,
+        candidate: event.candidate.toJSON(),
+      });
+    }
+  };
+
+  // Handle incoming streams
+  peerConnection.ontrack = (event) => {
+    const [remoteStream] = event.streams;
+    if (!document.querySelector(`[data-user="${id}"]`)) {
+      addVideoStream(remoteStream, id);
+    }
+  };
+
+  // Create offer and send it to Firebase
+  peerConnection.createOffer()
+    .then((offer) => {
+      peerConnection.setLocalDescription(offer);
+      push(ref(db, `signals/${id}`), {
+        from: userId,
+        offer,
+      });
     });
 
-    // Listen for new users
-    onValue(ref(db, "users"), (snapshot) => {
-      const users = snapshot.val();
-      for (const id in users) {
-        if (id !== userId && !peers[id]) {
-          connectToNewUser(id);
-        }
-      }
-    });
+  peers[id] = peerConnection;
+};
 
-    // WebRTC signaling logic
-    const connectToNewUser = (id) => {
-      const peerConnection = new RTCPeerConnection(config);
+// Listen for signaling messages
+onValue(ref(db, `signals/${userId}`), (snapshot) => {
+  const signals = snapshot.val();
+  if (!signals) return;
 
-      // Add local stream tracks
+  for (const key in signals) {
+    const signal = signals[key];
+    const { from, offer, answer, candidate } = signal;
+
+    if (from === userId) continue;
+
+    let peerConnection = peers[from];
+    if (!peerConnection) {
+      peerConnection = new RTCPeerConnection(config);
       localStream.getTracks().forEach((track) => {
         peerConnection.addTrack(track, localStream);
       });
 
-      // Send ICE candidates to Firebase
       peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
-          push(ref(db, `signals/${id}`), {
+          push(ref(db, `signals/${from}`), {
             from: userId,
             candidate: event.candidate.toJSON(),
           });
         }
       };
 
-      // Handle incoming streams
       peerConnection.ontrack = (event) => {
         const [remoteStream] = event.streams;
-        if (!document.querySelector(`[data-user="${id}"]`)) {
-          addVideoStream(remoteStream, id);
-        }
+        addVideoStream(remoteStream, from);
       };
 
-      // Create offer and send it to Firebase
-      peerConnection.createOffer()
-        .then((offer) => {
-          peerConnection.setLocalDescription(offer);
-          push(ref(db, `signals/${id}`), {
-            from: userId,
-            offer,
-          });
-        });
+      peers[from] = peerConnection;
+    }
 
-      peers[id] = peerConnection;
-    };
-
-    // Listen for signaling messages
-    onValue(ref(db, `signals/${userId}`), (snapshot) => {
-      const signals = snapshot.val();
-      if (!signals) return;
-
-      for (const key in signals) {
-        const signal = signals[key];
-        const { from, offer, answer, candidate } = signal;
-
-        if (from === userId) continue;
-
-        let peerConnection = peers[from];
-        if (!peerConnection) {
-          peerConnection = new RTCPeerConnection(config);
-          localStream.getTracks().forEach((track) => {
-            peerConnection.addTrack(track, localStream);
+    // Handle offer
+    if (offer && peerConnection.signalingState === "stable") {
+      const cleanOffer = cleanSDP(offer.sdp); // Clean SDP
+      peerConnection
+        .setRemoteDescription(new RTCSessionDescription({ type: "offer", sdp: cleanOffer }))
+        .then(() => {
+          peerConnection.createAnswer().then((answer) => {
+            peerConnection.setLocalDescription(answer);
+            push(ref(db, `signals/${from}`), {
+              from: userId,
+              answer,
+            });
           });
 
-          peerConnection.onicecandidate = (event) => {
-            if (event.candidate) {
-              push(ref(db, `signals/${from}`), {
-                from: userId,
-                candidate: event.candidate.toJSON(),
-              });
-            }
-          };
-
-          peerConnection.ontrack = (event) => {
-            const [remoteStream] = event.streams;
-            addVideoStream(remoteStream, from);
-          };
-
-          peers[from] = peerConnection;
-        }
-
-        // Handle offer
-        if (offer && peerConnection.signalingState === "stable") {
-          peerConnection
-            .setRemoteDescription(new RTCSessionDescription(offer))
-            .then(() => {
-              peerConnection.createAnswer().then((answer) => {
-                peerConnection.setLocalDescription(answer);
-                push(ref(db, `signals/${from}`), {
-                  from: userId,
-                  answer,
-                });
-              });
-
-              // Add pending ICE candidates
-              if (pendingCandidates[from]) {
-                pendingCandidates[from].forEach((pending) => {
-                  peerConnection.addIceCandidate(new RTCIceCandidate(pending));
-                });
-                delete pendingCandidates[from];
-              }
-            })
-            .catch((error) => console.error("Error handling offer:", error));
-        }
-
-        // Handle answer
-        if (answer && peerConnection.signalingState === "have-local-offer") {
-          peerConnection
-            .setRemoteDescription(new RTCSessionDescription(answer))
-            .catch((error) => console.error("Error handling answer:", error));
-        }
-
-        // Handle ICE candidates
-        if (candidate) {
-          if (peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
-            peerConnection
-              .addIceCandidate(new RTCIceCandidate(candidate))
-              .catch((error) => console.error("Error adding ICE candidate:", error));
-          } else {
-            // Store candidate if remoteDescription is not set
-            if (!pendingCandidates[from]) {
-              pendingCandidates[from] = [];
-            }
-            pendingCandidates[from].push(candidate);
+          // Add pending ICE candidates
+          if (pendingCandidates[from]) {
+            pendingCandidates[from].forEach((pending) => {
+              peerConnection.addIceCandidate(new RTCIceCandidate(pending));
+            });
+            delete pendingCandidates[from];
           }
+        })
+        .catch((error) => console.error("Error handling offer:", error));
+    }
+
+    // Handle answer
+    if (answer && peerConnection.signalingState === "have-local-offer") {
+      const cleanAnswer = cleanSDP(answer.sdp); // Clean SDP
+      peerConnection
+        .setRemoteDescription(new RTCSessionDescription({ type: "answer", sdp: cleanAnswer }))
+        .catch((error) => console.error("Error handling answer:", error));
+    }
+
+    // Handle ICE candidates
+    if (candidate) {
+      if (peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
+        peerConnection
+          .addIceCandidate(new RTCIceCandidate(candidate))
+          .catch((error) => console.error("Error adding ICE candidate:", error));
+      } else {
+        // Store candidate if remoteDescription is not set
+        if (!pendingCandidates[from]) {
+          pendingCandidates[from] = [];
         }
+        pendingCandidates[from].push(candidate);
       }
+    }
+  }
+});
+
+// Clear all Firebase data
+document.getElementById("clearDatabaseButton").addEventListener("click", () => {
+  if (confirm("Naozaj chcete odstrániť všetkých používateľov a signály z databázy?")) {
+    remove(ref(db)).then(() => {
+      alert("Všetci používatelia a signály boli odstránené.");
+    }).catch((error) => {
+      console.error("Chyba pri odstraňovaní databázy:", error);
     });
+  }
+});
   </script>
 </body>
 </html>
