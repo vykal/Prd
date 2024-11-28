@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kamera Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 20px;
+        }
+        video {
+            width: 100%;
+            max-width: 600px;
+            border: 2px solid #333;
+            border-radius: 8px;
+        }
+        .error {
+            color: red;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Kamera Test</h1>
+    <video id="camera" autoplay playsinline></video>
+    <p id="status">Stav: čaká sa na spustenie kamery...</p>
+    <div class="error" id="error"></div>
+    <button id="startCamera">Zapnúť kameru</button>
+
+    <script>
+        const video = document.getElementById('camera');
+        const status = document.getElementById('status');
+        const errorDisplay = document.getElementById('error');
+        const startButton = document.getElementById('startCamera');
+
+        startButton.addEventListener('click', async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: "user" } // Použitie prednej kamery
+                });
+                video.srcObject = stream;
+                status.textContent = "Kamera úspešne spustená!";
+                errorDisplay.textContent = "";
+            } catch (err) {
+                status.textContent = "Chyba pri spustení kamery.";
+                errorDisplay.textContent = "Chyba: " + err.message;
+            }
+        });
+    </script>
+</body>
+</html>
