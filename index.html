@@ -18,10 +18,41 @@
       height: 120px;
       object-fit: cover;
     }
+    .controls {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+    }
+    .button {
+      width: 60px;
+      height: 60px;
+      background: gray;
+      color: white;
+      font-size: 20px;
+      font-weight: bold;
+      text-align: center;
+      line-height: 60px;
+      border-radius: 10px;
+      user-select: none;
+      cursor: pointer;
+    }
+    .button:active {
+      background: darkgray;
+    }
   </style>
 </head>
 <body>
 <canvas id="gameCanvas"></canvas>
+<div class="controls">
+  <div class="button" id="left">◀</div>
+  <div class="button" id="up">▲</div>
+  <div class="button" id="down">▼</div>
+  <div class="button" id="right">▶</div>
+</div>
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
@@ -43,9 +74,6 @@
   const app = initializeApp(firebaseConfig);
   const db = getDatabase(app);
 
-  // WebRTC konfigurácia
-  const config = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
-
   const canvas = document.getElementById("gameCanvas");
   const ctx = canvas.getContext("2d");
 
@@ -56,8 +84,6 @@
   const videoElements = {};
 
   const players = {}; // Ukladá stav všetkých hráčov
-  const peers = {}; // WebRTC connections
-  const pendingCandidates = {}; // Pending ICE candidates
   const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
 
   // Pridanie lokálneho videa
@@ -107,79 +133,40 @@
     });
   }
 
-  // Klávesové ovládanie
-  window.addEventListener("keydown", (e) => {
-    if (e.key === "ArrowLeft") player.dx = -5;
-    if (e.key === "ArrowRight") player.dx = 5;
-    if (e.key === "ArrowUp") player.dy = -5;
-    if (e.key === "ArrowDown") player.dy = 5;
-  });
+  // Ovládanie dotykom
+  const leftButton = document.getElementById("left");
+  const rightButton = document.getElementById("right");
+  const upButton = document.getElementById("up");
+  const downButton = document.getElementById("down");
 
-  window.addEventListener("keyup", (e) => {
-    if (["ArrowLeft", "ArrowRight"].includes(e.key)) player.dx = 0;
-    if (["ArrowUp", "ArrowDown"].includes(e.key)) player.dy = 0;
-  });
+  leftButton.addEventListener("mousedown", () => (player.dx = -5));
+  rightButton.addEventListener("mousedown", () => (player.dx = 5));
+  upButton.addEventListener("mousedown", () => (player.dy = -5));
+  downButton.addEventListener("mousedown", () => (player.dy = 5));
 
-  // WebRTC logika
-  function connectToNewUser(id) {
-    const peerConnection = new RTCPeerConnection(config);
+  leftButton.addEventListener("mouseup", () => (player.dx = 0));
+  rightButton.addEventListener("mouseup", () => (player.dx = 0));
+  upButton.addEventListener("mouseup", () => (player.dy = 0));
+  downButton.addEventListener("mouseup", () => (player.dy = 0));
 
-    localStream.getTracks().forEach((track) => {
-      peerConnection.addTrack(track, localStream);
-    });
+  leftButton.addEventListener("touchstart", () => (player.dx = -5));
+  rightButton.addEventListener("touchstart", () => (player.dx = 5));
+  upButton.addEventListener("touchstart", () => (player.dy = -5));
+  downButton.addEventListener("touchstart", () => (player.dy = 5));
 
-    peerConnection.onicecandidate = (event) => {
-      if (event.candidate) {
-        push(ref(db, `signals/${id}`), { from: userId, candidate: event.candidate.toJSON() });
-      }
-    };
+  leftButton.addEventListener("touchend", () => (player.dx = 0));
+  rightButton.addEventListener("touchend", () => (player.dx = 0));
+  upButton.addEventListener("touchend", () => (player.dy = 0));
+  downButton.addEventListener("touchend", () => (player.dy = 0));
 
-    peerConnection.ontrack = (event) => {
-      const [remoteStream] = event.streams;
-      addVideoStream(remoteStream, id);
-    };
-
-    peerConnection.createOffer().then((offer) => {
-      peerConnection.setLocalDescription(offer);
-      push(ref(db, `signals/${id}`), { from: userId, offer });
-    });
-
-    peers[id] = peerConnection;
-  }
-
+  // Firebase
   onValue(ref(db, "players"), (snapshot) => {
     const data = snapshot.val() || {};
     players[userId] = player;
     Object.keys(data).forEach((id) => {
-      if (id !== userId) {
-        players[id] = data[id];
-        if (!peers[id]) connectToNewUser(id);
-      }
+      players[id] = data[id];
     });
     drawPlayers();
-  });
-
-  onValue(ref(db, `signals/${userId}`), (snapshot) => {
-    const signals = snapshot.val() || {};
-    for (const key in signals) {
-      const signal = signals[key];
-      const { from, offer, answer, candidate } = signal;
-
-      if (!peers[from]) connectToNewUser(from);
-
-      const peerConnection = peers[from];
-      if (offer) {
-        peerConnection.setRemoteDescription(new RTCSessionDescription(offer)).then(() => {
-          peerConnection.createAnswer().then((answer) => {
-            peerConnection.setLocalDescription(answer);
-            push(ref(db, `signals/${from}`), { from: userId, answer });
-          });
-        });
-      }
-
-      if (answer) peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-      if (candidate) peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
-    }
   });
 
   function update() {
@@ -191,7 +178,6 @@
 
   window.addEventListener("beforeunload", () => {
     remove(ref(db, `players/${userId}`));
-    remove(ref(db, `signals/${userId}`));
   });
 </script>
 </body>
