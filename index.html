@@ -58,7 +58,7 @@
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-  import { getDatabase, ref, set, onValue, remove, push } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+  import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
   // Firebase configuration
   const firebaseConfig = {
@@ -114,18 +114,30 @@
   }
 
   // Movement logic
-  document.getElementById('left').addEventListener('mousedown', () => (player.dx = -5));
-  document.getElementById('right').addEventListener('mousedown', () => (player.dx = 5));
+  const controls = {
+    left: false,
+    right: false
+  };
+
+  document.getElementById('left').addEventListener('mousedown', () => controls.left = true);
+  document.getElementById('right').addEventListener('mousedown', () => controls.right = true);
+  document.getElementById('left').addEventListener('mouseup', () => controls.left = false);
+  document.getElementById('right').addEventListener('mouseup', () => controls.right = false);
+  
   document.getElementById('jump').addEventListener('mousedown', () => {
     if (player.grounded) {
       player.dy = -15;
       player.grounded = false;
     }
   });
-  document.addEventListener('mouseup', () => (player.dx = 0));
 
   function updatePlayer() {
+    if (controls.left) player.dx = -5;
+    else if (controls.right) player.dx = 5;
+    else player.dx = 0;
+
     player.x += player.dx;
+
     if (!player.grounded) {
       player.dy += 0.8;
     }
