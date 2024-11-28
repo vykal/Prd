@@ -60,8 +60,9 @@
                 localVideo.srcObject = localStream;
 
                 // Save user stream to Firebase
-                const videoTracks = localStream.getVideoTracks();
-                set(ref(db, `users/${userId}`), { videoTrackId: videoTracks[0].id });
+                set(ref(db, `users/${userId}`), { 
+                    stream: true 
+                });
 
                 // Remove user from database when they leave
                 window.addEventListener("beforeunload", () => {
@@ -78,12 +79,15 @@
         onValue(ref(db, "users"), (snapshot) => {
             const users = snapshot.val() || {};
             remoteVideosContainer.innerHTML = ""; // Clear existing videos
+
             Object.keys(users).forEach((key) => {
                 if (key !== userId) {
                     const video = document.createElement("video");
                     video.autoplay = true;
                     video.playsinline = true;
-                    video.srcObject = localStream; // Replace with actual remote stream logic
+
+                    // For demo purposes, we don't have real streams from others yet
+                    video.textContent = `Placeholder for ${key}`;
                     remoteVideosContainer.appendChild(video);
                 }
             });
