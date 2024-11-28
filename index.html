@@ -37,7 +37,7 @@
   <div id="videos"></div>
 
   <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-app.js";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-app.js";
 import { getDatabase, ref, set, onValue, remove, push } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-database.js";
 
 // Firebase configuration
@@ -66,27 +66,34 @@ const config = {
 
 const peers = {}; // Store peer connections
 const pendingCandidates = {}; // Store ICE candidates temporarily
+const addedVideoElements = new Set(); // Track added video elements
 const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
 
-// Add local video to DOM
+// Add video stream to the DOM
 const addVideoStream = (stream, id) => {
+  if (addedVideoElements.has(id)) return; // Prevent duplicate video elements
+
   const video = document.createElement("video");
   video.srcObject = stream;
   video.autoplay = true;
   video.muted = id === userId; // Mute local stream
   video.dataset.userId = id;
   document.getElementById("videos").appendChild(video);
+
+  // Mark video as added
+  addedVideoElements.add(id);
 };
 
 // Add local stream to page
 addVideoStream(localStream, userId);
 
-// Notify Firebase about new user
+// Notify Firebase about the new user
 set(ref(db, `users/${userId}`), { userId });
 
 // Handle user disconnection
 window.addEventListener("beforeunload", () => {
   remove(ref(db, `users/${userId}`));
+  addedVideoElements.delete(userId); // Clean up added video elements
 });
 
 // SDP cleaner function
@@ -126,9 +133,7 @@ const connectToNewUser = (id) => {
   // Handle incoming streams
   peerConnection.ontrack = (event) => {
     const [remoteStream] = event.streams;
-    if (!document.querySelector(`[data-user="${id}"]`)) {
-      addVideoStream(remoteStream, id);
-    }
+    addVideoStream(remoteStream, id);
   };
 
   // Create offer and send it to Firebase
@@ -144,7 +149,7 @@ const connectToNewUser = (id) => {
   peers[id] = peerConnection;
 };
 
-// Listen for signaling messages
+// Signal handling through Firebase
 onValue(ref(db, `signals/${userId}`), (snapshot) => {
   const signals = snapshot.val();
   if (!signals) return;
@@ -219,7 +224,6 @@ onValue(ref(db, `signals/${userId}`), (snapshot) => {
           .addIceCandidate(new RTCIceCandidate(candidate))
           .catch((error) => console.error("Error adding ICE candidate:", error));
       } else {
-        // Store candidate if remoteDescription is not set
         if (!pendingCandidates[from]) {
           pendingCandidates[from] = [];
         }
