@@ -5,11 +5,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Video Stretnutie</title>
   <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+    }
+    h1 {
+      text-align: center;
+      margin-top: 10px;
+    }
+    #videoContainer {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      padding: 10px;
+    }
     video {
-      width: 200px;
-      height: 150px;
-      margin: 10px;
+      width: 100%;
+      max-width: 300px;
+      margin: 5px;
       border: 2px solid #000;
+      border-radius: 8px;
     }
   </style>
   <script type="module">
@@ -33,44 +48,53 @@
     const userId = `user-${Math.random().toString(36).substr(2, 9)}`;
 
     async function startVideoMeeting() {
-      // Získanie vlastného video streamu
-      const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-
-      // Zobrazenie vlastného videa
-      const localVideo = document.getElementById("localVideo");
-      localVideo.srcObject = localStream;
-
-      // Zápis údajov o používateľovi do databázy
-      const userRef = ref(database, `users/${userId}`);
-      await set(userRef, { id: userId });
-
-      // Odstránenie z databázy pri odchode
-      onDisconnect(userRef).remove();
-
-      // Poslucháč na zmeny v databáze
-      const usersRef = ref(database, "users");
-      onValue(usersRef, (snapshot) => {
-        const users = snapshot.val() || {};
-        const videoContainer = document.getElementById("videoContainer");
-
-        // Vyčistiť kontajner a pridať nové videá
-        videoContainer.innerHTML = "";
-        Object.keys(users).forEach((id) => {
-          const videoElement = document.createElement("video");
-          videoElement.autoplay = true;
-          videoElement.controls = false;
-          videoElement.muted = id === userId;
-
-          // Ak id je vlastné, používame vlastný stream, inak simulujeme
-          if (id === userId) {
-            videoElement.srcObject = localStream;
-          } else {
-            // Simulácia cudzieho streamu (v realite by sme tu použili WebRTC)
-            videoElement.src = "https://via.placeholder.com/300x200?text=User+" + id;
-          }
-          videoContainer.appendChild(videoElement);
+      try {
+        // Získanie streamu (video + audio)
+        const localStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user" }, // Podpora prednej kamery na telefónoch
+          audio: true
         });
-      });
+
+        // Zobrazenie vlastného videa
+        const localVideo = document.getElementById("localVideo");
+        localVideo.srcObject = localStream;
+
+        // Uloženie údajov používateľa do databázy
+        const userRef = ref(database, `users/${userId}`);
+        await set(userRef, { id: userId });
+
+        // Automatické odstránenie pri odchode
+        onDisconnect(userRef).remove();
+
+        // Poslucháč na zmeny v databáze
+        const usersRef = ref(database, "users");
+        onValue(usersRef, (snapshot) => {
+          const users = snapshot.val() || {};
+          const videoContainer = document.getElementById("videoContainer");
+
+          // Vyčisti kontajner a pridaj nové videá
+          videoContainer.innerHTML = "";
+          Object.keys(users).forEach((id) => {
+            const videoElement = document.createElement("video");
+            videoElement.autoplay = true;
+            videoElement.controls = false;
+            videoElement.playsInline = true; // Pre telefóny, aby fungovalo na fullscreen
+            videoElement.muted = id === userId;
+
+            // Ak id je vlastné, používame vlastný stream, inak simulujeme
+            if (id === userId) {
+              videoElement.srcObject = localStream;
+            } else {
+              // Simulácia cudzieho streamu
+              videoElement.src = "https://via.placeholder.com/300x200?text=User+" + id;
+            }
+            videoContainer.appendChild(videoElement);
+          });
+        });
+      } catch (err) {
+        console.error("Chyba pri spustení videa:", err);
+        alert("Nemožno získať prístup ku kamere a mikrofónu.");
+      }
     }
 
     window.onload = startVideoMeeting;
@@ -79,7 +103,7 @@
 <body>
   <h1>Video Stretnutie</h1>
   <div id="videoContainer">
-    <video id="localVideo" autoplay muted></video>
+    <video id="localVideo" autoplay muted playsinline></video>
   </div>
 </body>
 </html>
