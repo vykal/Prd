@@ -30,11 +30,44 @@
             height: 75px;
             object-fit: cover;
         }
+
+        .controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+        }
+
+        .button {
+            width: 60px;
+            height: 60px;
+            background: gray;
+            color: white;
+            font-size: 20px;
+            font-weight: bold;
+            text-align: center;
+            line-height: 60px;
+            border-radius: 10px;
+            user-select: none;
+            cursor: pointer;
+        }
+
+        .button:active {
+            background: darkgray;
+        }
     </style>
 </head>
 <body>
     <canvas id="gameCanvas"></canvas>
     <div id="videos"></div>
+    <div class="controls">
+        <div class="button" id="left">◀</div>
+        <div class="button" id="up">▲</div>
+        <div class="button" id="right">▶</div>
+        <div class="button" id="down">▼</div>
+    </div>
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
@@ -62,7 +95,6 @@
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
 
-        // Generovanie unikátneho ID pre hráča
         const playerId = `player_${Math.random().toString(36).substring(2, 9)}`;
         const player = {
             id: playerId,
@@ -73,13 +105,10 @@
         };
 
         const players = {};
-
-        // WebRTC konfigurácia
         const config = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
         const peers = {};
         const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
 
-        // Pridanie lokálneho video streamu
         const addVideoStream = (stream, id, x, y) => {
             let video = document.querySelector(`video[data-id="${id}"]`);
             if (!video) {
@@ -95,16 +124,10 @@
 
         addVideoStream(localStream, playerId, player.x, player.y);
 
-        // Posielanie dát do Firebase
         function sendDataToFirebase() {
-            set(ref(db, `players/${player.id}`), {
-                ...player,
-                x: player.x,
-                y: player.y
-            });
+            set(ref(db, `players/${player.id}`), { ...player });
         }
 
-        // Počúvanie zmien v databáze
         onValue(ref(db, 'players'), (snapshot) => {
             const data = snapshot.val() || {};
             Object.keys(data).forEach((id) => {
@@ -120,26 +143,32 @@
             });
         });
 
-        // Pohyb hráča
         document.addEventListener('keydown', (e) => {
             switch (e.key) {
-                case 'ArrowLeft':
-                    player.x -= 10;
-                    break;
-                case 'ArrowRight':
-                    player.x += 10;
-                    break;
-                case 'ArrowUp':
-                    player.y -= 10;
-                    break;
-                case 'ArrowDown':
-                    player.y += 10;
-                    break;
+                case 'ArrowLeft': player.x -= 10; break;
+                case 'ArrowRight': player.x += 10; break;
+                case 'ArrowUp': player.y -= 10; break;
+                case 'ArrowDown': player.y += 10; break;
             }
             sendDataToFirebase();
         });
 
-        // WebRTC Signaling
+        // Mobilné dotykové ovládanie
+        const leftButton = document.getElementById('left');
+        const rightButton = document.getElementById('right');
+        const upButton = document.getElementById('up');
+        const downButton = document.getElementById('down');
+
+        leftButton.addEventListener('mousedown', () => { player.x -= 10; sendDataToFirebase(); });
+        rightButton.addEventListener('mousedown', () => { player.x += 10; sendDataToFirebase(); });
+        upButton.addEventListener('mousedown', () => { player.y -= 10; sendDataToFirebase(); });
+        downButton.addEventListener('mousedown', () => { player.y += 10; sendDataToFirebase(); });
+
+        leftButton.addEventListener('touchstart', () => { player.x -= 10; sendDataToFirebase(); });
+        rightButton.addEventListener('touchstart', () => { player.x += 10; sendDataToFirebase(); });
+        upButton.addEventListener('touchstart', () => { player.y -= 10; sendDataToFirebase(); });
+        downButton.addEventListener('touchstart', () => { player.y += 10; sendDataToFirebase(); });
+
         const connectToNewUser = (id, otherPlayer) => {
             const peerConnection = new RTCPeerConnection(config);
             peers[id] = peerConnection;
@@ -179,12 +208,10 @@
             });
         };
 
-        // Odstránenie hráča pri odpojení
         window.addEventListener('beforeunload', () => {
             remove(ref(db, `players/${player.id}`));
         });
 
-        // Inicializácia
         sendDataToFirebase();
     </script>
 </body>
