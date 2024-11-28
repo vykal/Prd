@@ -4,6 +4,31 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Video Meeting</title>
+  <style>
+    #videos {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    video {
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      width: 200px;
+      height: 150px;
+      object-fit: cover;
+    }
+    .placeholder {
+      border: 1px solid black;
+      width: 200px;
+      height: 150px;
+      background: gray;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: white;
+      font-weight: bold;
+    }
+  </style>
 </head>
 <body>
   <h1>Video Meeting</h1>
@@ -13,7 +38,7 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-app.js";
     import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-database.js";
 
-    // Your web app's Firebase configuration
+    // Firebase configuration
     const firebaseConfig = {
       apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
       authDomain: "videjo-d0996.firebaseapp.com",
@@ -29,59 +54,62 @@
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app);
 
-    // Helper to get a unique user ID
+    // Get unique user ID
     const userId = Math.random().toString(36).substring(2, 15);
 
-    // Get camera stream and display it
+    // Function to start the camera
     const startCamera = async () => {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
 
-      // Display user's own video
-      const video = document.createElement('video');
-      video.srcObject = stream;
-      video.autoplay = true;
-      video.muted = true;
-      video.width = 200;
-      document.getElementById('videos').appendChild(video);
+        // Display the user's own video
+        const videoElement = document.createElement('video');
+        videoElement.srcObject = stream;
+        videoElement.autoplay = true;
+        videoElement.muted = true;
+        document.getElementById('videos').appendChild(videoElement);
 
-      // Send stream data to Firebase
-      set(ref(db, `users/${userId}`), {
-        userId,
-        timestamp: Date.now()
-      });
+        // Notify the database about the new user
+        set(ref(db, `users/${userId}`), {
+          userId,
+          timestamp: Date.now()
+        });
 
-      return stream;
+        return stream;
+      } catch (error) {
+        console.error("Error accessing camera:", error);
+        alert("Camera access is required to use this application.");
+      }
     };
 
-    // Remove user from Firebase on page unload
+    // Update videos for other users
+    const updateVideos = () => {
+      onValue(ref(db, "users"), (snapshot) => {
+        const users = snapshot.val() || {};
+        const videoContainer = document.getElementById('videos');
+        const userIds = Object.keys(users);
+
+        // Clear the container and re-add videos
+        videoContainer.innerHTML = "";
+
+        userIds.forEach((id) => {
+          if (id === userId) return; // Skip own video
+
+          // Placeholder for other users (replace with WebRTC for real video streams)
+          const placeholder = document.createElement('div');
+          placeholder.className = 'placeholder';
+          placeholder.innerText = `User ${id}`;
+          videoContainer.appendChild(placeholder);
+        });
+      });
+    };
+
+    // Remove user from Firebase on unload
     window.addEventListener("beforeunload", () => {
       remove(ref(db, `users/${userId}`));
     });
 
-    // Display other users' streams
-    const updateVideos = () => {
-      onValue(ref(db, "users"), (snapshot) => {
-        const users = snapshot.val();
-        const container = document.getElementById('videos');
-        container.innerHTML = ""; // Clear videos before rendering
-
-        for (const id in users) {
-          if (id === userId) continue; // Skip current user's video
-
-          const videoPlaceholder = document.createElement('div');
-          videoPlaceholder.innerText = `User ${id}`;
-          videoPlaceholder.style.border = "1px solid black";
-          videoPlaceholder.style.width = "200px";
-          videoPlaceholder.style.height = "150px";
-          videoPlaceholder.style.background = "gray";
-          videoPlaceholder.style.margin = "10px";
-
-          container.appendChild(videoPlaceholder);
-        }
-      });
-    };
-
-    // Initialize the app
+    // Initialize
     (async () => {
       await startCamera();
       updateVideos();
