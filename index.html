@@ -3,31 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Multiplayer Camera Game</title>
+  <title>Multiplayer Video Game</title>
   <style>
     body {
       margin: 0;
       overflow: hidden;
     }
+
     canvas {
       display: block;
       background: lightblue;
     }
-    #videos {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-    }
-    video {
-      border: 1px solid #ccc;
-      border-radius: 5px;
-      width: 150px;
-      height: 100px;
-      object-fit: cover;
-    }
+
     .controls {
       position: absolute;
       bottom: 20px;
@@ -37,6 +24,7 @@
       justify-content: center;
       gap: 10px;
     }
+
     .button {
       width: 60px;
       height: 60px;
@@ -50,163 +38,183 @@
       user-select: none;
       cursor: pointer;
     }
+
     .button:active {
       background: darkgray;
+    }
+
+    #videos {
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 10;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    video {
+      border: 2px solid #fff;
+      border-radius: 10px;
+      width: 100px;
+      height: 75px;
+      object-fit: cover;
     }
   </style>
 </head>
 <body>
-  <canvas id="gameCanvas"></canvas>
-  <div id="videos"></div>
-  <div class="controls">
-    <div class="button" id="left">◀</div>
-    <div class="button" id="jump">⤒</div>
-    <div class="button" id="right">▶</div>
-  </div>
+<canvas id="gameCanvas"></canvas>
+<div id="videos"></div>
+<div class="controls">
+  <div class="button" id="left">◀</div>
+  <div class="button" id="jump">⤒</div>
+  <div class="button" id="right">▶</div>
+</div>
 
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-    import { getDatabase, ref, set, onValue, remove, push } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+  import { getDatabase, ref, set, onValue, remove, push } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-    // Firebase configuration
-    const gameConfig = {
-      apiKey: "AIzaSyACWLI7L0zhZk7RFQyEXlOyQjtMPF-MgDw",
-      authDomain: "hrav-1a742.firebaseapp.com",
-      databaseURL: "https://hrav-1a742-default-rtdb.europe-west1.firebasedatabase.app",
-      projectId: "hrav-1a742",
-      storageBucket: "hrav-1a742.appspot.com",
-      messagingSenderId: "1093772001619",
-      appId: "1:1093772001619:web:97d8e6dd9d5cd28da761a6",
-      measurementId: "G-GFVZ6ZD5RE"
-    };
+  const firebaseConfigGame = {
+    apiKey: "AIzaSyACWLI7L0zhZk7RFQyEXlOyQjtMPF-MgDw",
+    authDomain: "hrav-1a742.firebaseapp.com",
+    databaseURL: "https://hrav-1a742-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "hrav-1a742",
+    storageBucket: "hrav-1a742.appspot.com",
+    messagingSenderId: "1093772001619",
+    appId: "1:1093772001619:web:97d8e6dd9d5cd28da761a6",
+    measurementId: "G-GFVZ6ZD5RE"
+  };
 
-    const videoConfig = {
-      apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
-      authDomain: "videjo-d0996.firebaseapp.com",
-      databaseURL: "https://videjo-d0996-default-rtdb.europe-west1.firebasedatabase.app",
-      projectId: "videjo-d0996",
-      storageBucket: "videjo-d0996.appspot.com",
-      messagingSenderId: "175126755237",
-      appId: "1:175126755237:web:8cf31d7a4d08f9fb2bda4c",
-      measurementId: "G-6Q2BJX1FE5"
-    };
+  const firebaseConfigVideo = {
+    apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
+    authDomain: "videjo-d0996.firebaseapp.com",
+    databaseURL: "https://videjo-d0996-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "videjo-d0996",
+    storageBucket: "videjo-d0996.appspot.com",
+    messagingSenderId: "175126755237",
+    appId: "1:175126755237:web:8cf31d7a4d08f9fb2bda4c",
+    measurementId: "G-6Q2BJX1FE5"
+  };
 
-    // Initialize Firebase
-    const gameApp = initializeApp(gameConfig, "gameApp");
-    const videoApp = initializeApp(videoConfig, "videoApp");
+  const appGame = initializeApp(firebaseConfigGame, "game");
+  const dbGame = getDatabase(appGame);
 
-    const gameDb = getDatabase(gameApp);
-    const videoDb = getDatabase(videoApp);
+  const appVideo = initializeApp(firebaseConfigVideo, "video");
+  const dbVideo = getDatabase(appVideo);
 
-    // Local user data
-    const userId = Math.random().toString(36).substring(2, 15);
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = canvas.getContext('2d');
 
-    // Canvas setup
-    const canvas = document.getElementById("gameCanvas");
-    const ctx = canvas.getContext("2d");
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
 
-    const player = {
-      id: userId,
-      x: Math.random() * (canvas.width - 50),
-      y: canvas.height - 150,
-      width: 50,
-      height: 50,
-      dx: 0,
-      dy: 0,
-      isJumping: false,
-      grounded: true,
-    };
+  const playerId = `player_${Math.random().toString(36).substring(2, 9)}`;
+  const players = {};
+  const videoElements = {};
 
-    const players = {};
+  const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+  const videosContainer = document.getElementById('videos');
 
-    // Local video setup
-    const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    const videoContainer = document.getElementById("videos");
-    const localVideo = document.createElement("video");
-    localVideo.srcObject = localStream;
-    localVideo.autoplay = true;
-    localVideo.muted = true;
-    videoContainer.appendChild(localVideo);
+  const player = {
+    id: playerId,
+    x: Math.random() * (canvas.width - 50),
+    y: canvas.height - 150,
+    width: 50,
+    height: 50,
+    dx: 0,
+    dy: 0,
+    isJumping: false,
+    grounded: true
+  };
 
-    // Game controls
-    document.getElementById("left").addEventListener("mousedown", () => (player.dx = -5));
-    document.getElementById("right").addEventListener("mousedown", () => (player.dx = 5));
-    document.getElementById("jump").addEventListener("mousedown", () => {
-      if (player.grounded) {
-        player.dy = -15;
-        player.isJumping = true;
-        player.grounded = false;
+  const addVideoStream = (stream, id) => {
+    if (videoElements[id]) return;
+    const video = document.createElement('video');
+    video.srcObject = stream;
+    video.autoplay = true;
+    video.muted = id === playerId;
+    video.dataset.userId = id;
+    videosContainer.appendChild(video);
+    videoElements[id] = video;
+  };
+
+  addVideoStream(localStream, playerId);
+
+  set(ref(dbVideo, `users/${playerId}`), { userId: playerId });
+
+  window.addEventListener('beforeunload', () => {
+    remove(ref(dbVideo, `users/${playerId}`));
+    remove(ref(dbGame, `players/${playerId}`));
+  });
+
+  const leftButton = document.getElementById('left');
+  const rightButton = document.getElementById('right');
+  const jumpButton = document.getElementById('jump');
+
+  leftButton.addEventListener('mousedown', () => player.dx = -5);
+  rightButton.addEventListener('mousedown', () => player.dx = 5);
+  jumpButton.addEventListener('mousedown', () => {
+    if (player.grounded) {
+      player.dy = -15;
+      player.grounded = false;
+      player.isJumping = true;
+    }
+  });
+
+  leftButton.addEventListener('mouseup', () => player.dx = 0);
+  rightButton.addEventListener('mouseup', () => player.dx = 0);
+
+  const movePlayer = () => {
+    player.x += player.dx;
+    if (!player.grounded) {
+      player.dy += 0.8;
+      player.y += player.dy;
+    }
+    if (player.y + player.height >= canvas.height) {
+      player.y = canvas.height - player.height;
+      player.dy = 0;
+      player.grounded = true;
+      player.isJumping = false;
+    }
+    if (player.x < 0) player.x = 0;
+    if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+  };
+
+  const drawPlayers = () => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    Object.values(players).forEach(p => {
+      ctx.fillStyle = 'gray';
+      ctx.fillRect(p.x, p.y, p.width, p.height);
+    });
+  };
+
+  const updateGame = () => {
+    movePlayer();
+    set(ref(dbGame, `players/${playerId}`), player);
+    drawPlayers();
+    requestAnimationFrame(updateGame);
+  };
+
+  onValue(ref(dbGame, 'players'), (snapshot) => {
+    const data = snapshot.val() || {};
+    Object.keys(data).forEach(id => {
+      players[id] = data[id];
+    });
+    drawPlayers();
+  });
+
+  onValue(ref(dbVideo, 'users'), (snapshot) => {
+    const data = snapshot.val() || {};
+    Object.keys(data).forEach(id => {
+      if (id !== playerId) {
+        const newStream = new MediaStream();
+        addVideoStream(newStream, id);
       }
     });
-    document.querySelectorAll(".button").forEach((btn) =>
-      btn.addEventListener("mouseup", () => (player.dx = 0))
-    );
+  });
 
-    // Update player position
-    const movePlayer = () => {
-      player.x += player.dx;
-      if (!player.grounded) {
-        player.dy += 0.8;
-        player.y += player.dy;
-      }
-
-      if (player.y + player.height >= canvas.height) {
-        player.y = canvas.height - player.height;
-        player.dy = 0;
-        player.grounded = true;
-      }
-
-      if (player.x < 0) player.x = 0;
-      if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
-
-      // Send position to Firebase
-      set(ref(gameDb, `players/${player.id}`), player);
-    };
-
-    // Draw players
-    const drawPlayers = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      Object.values(players).forEach((p) => {
-        ctx.fillStyle = "gray";
-        ctx.fillRect(p.x, p.y, p.width, p.height);
-      });
-    };
-
-    // Firebase event listeners
-    onValue(ref(gameDb, "players"), (snapshot) => {
-      const data = snapshot.val() || {};
-      Object.keys(data).forEach((id) => (players[id] = data[id]));
-      drawPlayers();
-    });
-
-    // Video Firebase listeners
-    onValue(ref(videoDb, "users"), (snapshot) => {
-      const data = snapshot.val() || {};
-      Object.keys(data).forEach((id) => {
-        if (id !== userId && !videoContainer.querySelector(`[data-id="${id}"]`)) {
-          const video = document.createElement("video");
-          video.dataset.id = id;
-          video.autoplay = true;
-          videoContainer.appendChild(video);
-        }
-      });
-    });
-
-    // Remove player on disconnect
-    window.addEventListener("beforeunload", () => {
-      remove(ref(gameDb, `players/${userId}`));
-      remove(ref(videoDb, `users/${userId}`));
-    });
-
-    // Game loop
-    const update = () => {
-      movePlayer();
-      requestAnimationFrame(update);
-    };
-
-    update();
-  </script>
+  updateGame();
+</script>
 </body>
 </html>
