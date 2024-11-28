@@ -28,9 +28,8 @@
 <body>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-        import { getDatabase, ref, set, onValue, remove, push } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+        import { getDatabase, ref, set, push, onChildAdded, onChildRemoved, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-        // Firebase konfigurácia
         const firebaseConfig = {
             apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
             authDomain: "videjo-d0996.firebaseapp.com",
@@ -46,10 +45,7 @@
         const database = getDatabase(app);
 
         const userId = `user_${Math.random().toString(36).substr(2, 9)}`;
-        const userRef = ref(database, `users/${userId}`);
-
-        const peerConnections = {};
-        const configuration = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+        const usersRef = ref(database, "users");
 
         const localVideo = document.createElement("video");
         localVideo.autoplay = true;
@@ -57,47 +53,57 @@
         document.body.appendChild(localVideo);
 
         let localStream = null;
+        const peerConnections = {};
+        const configuration = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
 
-        // Pripojenie ku kamere
+        // Inicializácia lokálneho videa
         navigator.mediaDevices.getUserMedia({ video: true, audio: true })
             .then(stream => {
                 localStream = stream;
                 localVideo.srcObject = stream;
 
+                // Pridanie používateľa do databázy
+                const userRef = ref(database, `users/${userId}`);
                 set(userRef, { id: userId, timestamp: Date.now() });
-                window.addEventListener("beforeunload", () => remove(userRef));
+                window.addEventListener("beforeunload", () => {
+                    remove(userRef);
+                });
 
-                listenForUsers();
-            })
-            .catch(err => console.error("Prístup ku kamere bol zamietnutý:", err));
-
-        function listenForUsers() {
-            const usersRef = ref(database, "users");
-            onValue(usersRef, snapshot => {
-                const users = snapshot.val() || {};
-                Object.keys(users).forEach(key => {
-                    if (key !== userId && !peerConnections[key]) {
-                        createPeerConnection(key);
+                // Počúvanie na nových používateľov
+                onChildAdded(usersRef, snapshot => {
+                    const newUserId = snapshot.val().id;
+                    if (newUserId !== userId) {
+                        createPeerConnection(newUserId);
                     }
                 });
-            });
-        }
+
+                // Odstránenie používateľa pri odchode
+                onChildRemoved(usersRef, snapshot => {
+                    const removedUserId = snapshot.val().id;
+                    if (peerConnections[removedUserId]) {
+                        peerConnections[removedUserId].close();
+                        delete peerConnections[removedUserId];
+                    }
+                });
+            })
+            .catch(err => console.error("Prístup ku kamere bol zamietnutý:", err));
 
         function createPeerConnection(remoteUserId) {
             const peerConnection = new RTCPeerConnection(configuration);
             peerConnections[remoteUserId] = peerConnection;
 
+            // Pridanie lokálneho streamu do PeerConnection
             localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
 
+            // Vytvorenie ICE kandidátov
             peerConnection.onicecandidate = event => {
                 if (event.candidate) {
-                    push(ref(database, `ice_candidates/${remoteUserId}`), {
-                        from: userId,
-                        candidate: event.candidate
-                    });
+                    const candidateRef = ref(database, `candidates/${remoteUserId}`);
+                    push(candidateRef, { from: userId, candidate: event.candidate });
                 }
             };
 
+            // Počúvanie na prichádzajúce streamy
             peerConnection.ontrack = event => {
                 const remoteVideo = document.createElement("video");
                 remoteVideo.autoplay = true;
@@ -105,19 +111,12 @@
                 document.body.appendChild(remoteVideo);
             };
 
-            peerConnection.onconnectionstatechange = () => {
-                if (peerConnection.connectionState === "disconnected") {
-                    delete peerConnections[remoteUserId];
-                }
-            };
-
+            // Vytvorenie a odoslanie offer
             peerConnection.createOffer()
                 .then(offer => peerConnection.setLocalDescription(offer))
                 .then(() => {
-                    set(ref(database, `offers/${remoteUserId}`), {
-                        from: userId,
-                        offer: peerConnection.localDescription
-                    });
+                    const offerRef = ref(database, `offers/${remoteUserId}`);
+                    set(offerRef, { from: userId, offer: peerConnection.localDescription });
                 });
 
             listenForAnswers(remoteUserId);
@@ -125,9 +124,9 @@
 
         function listenForAnswers(remoteUserId) {
             const answerRef = ref(database, `answers/${userId}`);
-            onValue(answerRef, snapshot => {
+            onChildAdded(answerRef, snapshot => {
                 const data = snapshot.val();
-                if (data && data.from === remoteUserId) {
+                if (data.from === remoteUserId) {
                     const desc = new RTCSessionDescription(data.answer);
                     peerConnections[remoteUserId].setRemoteDescription(desc);
                 }
@@ -135,7 +134,7 @@
         }
 
         const offersRef = ref(database, `offers/${userId}`);
-        onValue(offersRef, snapshot => {
+        onChildAdded(offersRef, snapshot => {
             const data = snapshot.val();
             if (data && !peerConnections[data.from]) {
                 const peerConnection = new RTCPeerConnection(configuration);
@@ -143,10 +142,8 @@
 
                 peerConnection.onicecandidate = event => {
                     if (event.candidate) {
-                        push(ref(database, `ice_candidates/${data.from}`), {
-                            from: userId,
-                            candidate: event.candidate
-                        });
+                        const candidateRef = ref(database, `candidates/${data.from}`);
+                        push(candidateRef, { from: userId, candidate: event.candidate });
                     }
                 };
 
@@ -161,25 +158,21 @@
                     .then(() => peerConnection.createAnswer())
                     .then(answer => peerConnection.setLocalDescription(answer))
                     .then(() => {
-                        set(ref(database, `answers/${data.from}`), {
-                            from: userId,
-                            answer: peerConnection.localDescription
-                        });
+                        const answerRef = ref(database, `answers/${data.from}`);
+                        set(answerRef, { from: userId, answer: peerConnection.localDescription });
                     });
 
                 localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
             }
         });
 
-        const candidatesRef = ref(database, `ice_candidates/${userId}`);
-        onValue(candidatesRef, snapshot => {
-            const candidates = snapshot.val() || {};
-            Object.keys(candidates).forEach(key => {
-                const { from, candidate } = candidates[key];
-                if (peerConnections[from]) {
-                    peerConnections[from].addIceCandidate(new RTCIceCandidate(candidate));
-                }
-            });
+        const candidatesRef = ref(database, `candidates/${userId}`);
+        onChildAdded(candidatesRef, snapshot => {
+            const data = snapshot.val();
+            if (data && peerConnections[data.from]) {
+                const candidate = new RTCIceCandidate(data.candidate);
+                peerConnections[data.from].addIceCandidate(candidate);
+            }
         });
     </script>
 </body>
