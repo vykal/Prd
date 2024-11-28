@@ -3,130 +3,177 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Interactive Meeting</title>
+    <title>Multiplayer Video Game</title>
     <style>
         body {
             margin: 0;
             overflow: hidden;
+        }
+
+        canvas {
+            display: block;
             background: lightblue;
         }
 
-        #videos {
-            position: relative;
-            width: 100%;
-            height: 100%;
+        video {
+            border: 2px solid #000;
+            border-radius: 10px;
+            position: absolute;
         }
 
-        video {
+        .controls {
             position: absolute;
-            width: 200px;
-            height: 150px;
-            object-fit: cover;
-            border: 2px solid white;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .button {
+            width: 60px;
+            height: 60px;
+            background: gray;
+            color: white;
+            font-size: 20px;
+            font-weight: bold;
+            text-align: center;
+            line-height: 60px;
             border-radius: 10px;
+            user-select: none;
+            cursor: pointer;
+        }
+
+        .button:active {
+            background: darkgray;
         }
     </style>
 </head>
 <body>
-<div id="videos"></div>
+<canvas id="gameCanvas"></canvas>
+<div class="controls">
+    <div class="button" id="left">◀</div>
+    <div class="button" id="jump">⤒</div>
+    <div class="button" id="right">▶</div>
+</div>
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-    import { getDatabase, ref, set, onValue, remove, push } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-    // Firebase configuration
-    const firebaseConfig = {
+    // Firebase configurations for game and video
+    const gameConfig = {
+        apiKey: "AIzaSyACWLI7L0zhZk7RFQyEXlOyQjtMPF-MgDw",
+        authDomain: "hrav-1a742.firebaseapp.com",
+        databaseURL: "https://hrav-1a742-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "hrav-1a742",
+        storageBucket: "hrav-1a742.appspot.com",
+        messagingSenderId: "1093772001619",
+        appId: "1:1093772001619:web:97d8e6dd9d5cd28da761a6",
+    };
+
+    const videoConfig = {
         apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
         authDomain: "videjo-d0996.firebaseapp.com",
         databaseURL: "https://videjo-d0996-default-rtdb.europe-west1.firebasedatabase.app",
         projectId: "videjo-d0996",
-        storageBucket: "videjo-d0996.firebasestorage.app",
+        storageBucket: "videjo-d0996.appspot.com",
         messagingSenderId: "175126755237",
         appId: "1:175126755237:web:8cf31d7a4d08f9fb2bda4c",
-        measurementId: "G-6Q2BJX1FE5"
     };
 
-    // Initialize Firebase
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
+    // Initialize Firebase apps
+    const gameApp = initializeApp(gameConfig, "game");
+    const videoApp = initializeApp(videoConfig, "video");
+    const gameDb = getDatabase(gameApp);
+    const videoDb = getDatabase(videoApp);
 
-    // Unique player ID
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
     const playerId = `player_${Math.random().toString(36).substring(2, 9)}`;
-    const playerRef = ref(db, `players/${playerId}`);
-    const playersRef = ref(db, 'players');
+    const player = {
+        id: playerId,
+        x: Math.random() * (canvas.width - 200),
+        y: canvas.height - 200,
+        dx: 0,
+        dy: 0,
+        grounded: true
+    };
 
-    // Local video setup
-    const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-    const videoContainer = document.getElementById('videos');
-    const localVideo = document.createElement('video');
+    const players = {};
+    const videoElements = {};
+
+    // Handle movement
+    function movePlayer() {
+        player.x += player.dx;
+        if (!player.grounded) {
+            player.dy += 0.8;
+            player.y += player.dy;
+        }
+        if (player.y + 150 >= canvas.height) {
+            player.y = canvas.height - 150;
+            player.dy = 0;
+            player.grounded = true;
+        }
+        if (player.x < 0) player.x = 0;
+        if (player.x + 200 > canvas.width) player.x = canvas.width - 200;
+    }
+
+    function updateVideoPositions() {
+        Object.values(players).forEach(p => {
+            if (videoElements[p.id]) {
+                const video = videoElements[p.id];
+                video.style.left = `${p.x}px`;
+                video.style.top = `${p.y}px`;
+            }
+        });
+    }
+
+    // Firebase listeners for game state
+    onValue(ref(gameDb, "players"), (snapshot) => {
+        Object.assign(players, snapshot.val() || {});
+        updateVideoPositions();
+    });
+
+    // Send player data to Firebase
+    function sendPlayerData() {
+        set(ref(gameDb, `players/${player.id}`), player);
+    }
+
+    // WebRTC video setup
+    const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    const localVideo = document.createElement("video");
     localVideo.srcObject = localStream;
     localVideo.autoplay = true;
     localVideo.muted = true;
-    videoContainer.appendChild(localVideo);
+    document.body.appendChild(localVideo);
+    videoElements[player.id] = localVideo;
 
-    // Player object
-    const player = {
-        id: playerId,
-        x: Math.random() * window.innerWidth,
-        y: Math.random() * window.innerHeight,
-        width: 200,
-        height: 150,
-        stream: localStream,
-    };
-
-    // Send player data to Firebase
-    set(playerRef, {
-        id: player.id,
-        x: player.x,
-        y: player.y,
+    // Handle movement controls
+    document.getElementById("left").addEventListener("mousedown", () => player.dx = -5);
+    document.getElementById("right").addEventListener("mousedown", () => player.dx = 5);
+    document.getElementById("jump").addEventListener("mousedown", () => {
+        if (player.grounded) {
+            player.dy = -15;
+            player.grounded = false;
+        }
     });
 
-    // Handle player disconnection
-    window.addEventListener('beforeunload', () => {
-        remove(playerRef);
-    });
+    document.getElementById("left").addEventListener("mouseup", () => player.dx = 0);
+    document.getElementById("right").addEventListener("mouseup", () => player.dx = 0);
 
-    // Move player
-    const movePlayer = (dx, dy) => {
-        player.x += dx;
-        player.y += dy;
-        if (player.x < 0) player.x = 0;
-        if (player.x + player.width > window.innerWidth) player.x = window.innerWidth - player.width;
-        if (player.y < 0) player.y = 0;
-        if (player.y + player.height > window.innerHeight) player.y = window.innerHeight - player.height;
+    // Game loop
+    function update() {
+        movePlayer();
+        sendPlayerData();
+        requestAnimationFrame(update);
+    }
 
-        localVideo.style.left = `${player.x}px`;
-        localVideo.style.top = `${player.y}px`;
-
-        set(playerRef, { id: player.id, x: player.x, y: player.y });
-    };
-
-    // Add event listeners for movement
-    window.addEventListener('keydown', (e) => {
-        if (e.key === 'ArrowLeft') movePlayer(-10, 0);
-        if (e.key === 'ArrowRight') movePlayer(10, 0);
-        if (e.key === 'ArrowUp') movePlayer(0, -10);
-        if (e.key === 'ArrowDown') movePlayer(0, 10);
-    });
-
-    // Handle other players
-    const otherPlayers = {};
-    onValue(playersRef, (snapshot) => {
-        const players = snapshot.val() || {};
-        Object.keys(players).forEach((id) => {
-            if (id !== playerId) {
-                if (!otherPlayers[id]) {
-                    const video = document.createElement('video');
-                    video.autoplay = true;
-                    videoContainer.appendChild(video);
-                    otherPlayers[id] = { video };
-                }
-                const { x, y } = players[id];
-                otherPlayers[id].video.style.left = `${x}px`;
-                otherPlayers[id].video.style.top = `${y}px`;
-            }
-        });
-    });
+    update();
 </script>
 </body>
 </html>
