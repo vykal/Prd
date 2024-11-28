@@ -52,6 +52,7 @@
     };
 
     const peers = {}; // Store peer connections
+    const pendingCandidates = {}; // Store ICE candidates temporarily
     const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
 
     // Add local video to DOM
@@ -107,7 +108,9 @@
       // Handle incoming streams
       peerConnection.ontrack = (event) => {
         const [remoteStream] = event.streams;
-        addVideoStream(remoteStream, id);
+        if (!document.querySelector(`[data-user="${id}"]`)) {
+          addVideoStream(remoteStream, id);
+        }
       };
 
       // Create offer and send it to Firebase
@@ -162,13 +165,22 @@
         if (offer && peerConnection.signalingState === "stable") {
           peerConnection
             .setRemoteDescription(new RTCSessionDescription(offer))
-            .then(() => peerConnection.createAnswer())
-            .then((answer) => {
-              peerConnection.setLocalDescription(answer);
-              push(ref(db, `signals/${from}`), {
-                from: userId,
-                answer,
+            .then(() => {
+              peerConnection.createAnswer().then((answer) => {
+                peerConnection.setLocalDescription(answer);
+                push(ref(db, `signals/${from}`), {
+                  from: userId,
+                  answer,
+                });
               });
+
+              // Add pending ICE candidates
+              if (pendingCandidates[from]) {
+                pendingCandidates[from].forEach((pending) => {
+                  peerConnection.addIceCandidate(new RTCIceCandidate(pending));
+                });
+                delete pendingCandidates[from];
+              }
             })
             .catch((error) => console.error("Error handling offer:", error));
         }
@@ -182,9 +194,17 @@
 
         // Handle ICE candidates
         if (candidate) {
-          peerConnection
-            .addIceCandidate(new RTCIceCandidate(candidate))
-            .catch((error) => console.error("Error adding ICE candidate:", error));
+          if (peerConnection.remoteDescription && peerConnection.remoteDescription.type) {
+            peerConnection
+              .addIceCandidate(new RTCIceCandidate(candidate))
+              .catch((error) => console.error("Error adding ICE candidate:", error));
+          } else {
+            // Store candidate if remoteDescription is not set
+            if (!pendingCandidates[from]) {
+              pendingCandidates[from] = [];
+            }
+            pendingCandidates[from].push(candidate);
+          }
         }
       }
     });
