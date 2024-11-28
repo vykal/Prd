@@ -10,22 +10,37 @@
         body {
             display: flex;
             flex-wrap: wrap;
-            gap: 10px;
+            gap: 20px;
+            justify-content: center;
+            align-items: flex-start;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f9;
+        }
+        #video-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
             justify-content: center;
             align-items: center;
-            height: 100vh;
-            margin: 0;
-            background-color: #f0f0f0;
+            width: 100%;
         }
         video {
             width: 300px;
             height: 200px;
             border: 2px solid #333;
             border-radius: 8px;
+            background-color: #000;
+        }
+        h1 {
+            text-align: center;
+            width: 100%;
         }
     </style>
 </head>
 <body>
+    <h1>Video Stretnutie</h1>
+    <div id="video-container"></div>
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
         import { getDatabase, ref, set, push, onChildAdded, onChildRemoved, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
@@ -46,31 +61,27 @@
 
         const userId = `user_${Math.random().toString(36).substr(2, 9)}`;
         const usersRef = ref(database, "users");
-        const candidatesRef = ref(database, "candidates");
+
+        const videoContainer = document.getElementById("video-container");
 
         const localVideo = document.createElement("video");
         localVideo.autoplay = true;
         localVideo.muted = true;
-        document.body.appendChild(localVideo);
+        videoContainer.appendChild(localVideo);
 
         let localStream = null;
         const peerConnections = {};
         const configuration = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
 
-        // Inicializácia lokálneho videa
         navigator.mediaDevices.getUserMedia({ video: true, audio: true })
             .then(stream => {
                 localStream = stream;
                 localVideo.srcObject = stream;
 
-                // Pridanie používateľa do databázy
                 const userRef = ref(database, `users/${userId}`);
                 set(userRef, { id: userId, timestamp: Date.now() });
-                window.addEventListener("beforeunload", () => {
-                    remove(userRef);
-                });
+                window.addEventListener("beforeunload", () => remove(userRef));
 
-                // Počúvanie na nových používateľov
                 onChildAdded(usersRef, snapshot => {
                     const newUserId = snapshot.val().id;
                     if (newUserId !== userId) {
@@ -78,7 +89,6 @@
                     }
                 });
 
-                // Počúvanie na odstránenie používateľa
                 onChildRemoved(usersRef, snapshot => {
                     const removedUserId = snapshot.val().id;
                     if (peerConnections[removedUserId]) {
@@ -93,10 +103,8 @@
             const peerConnection = new RTCPeerConnection(configuration);
             peerConnections[remoteUserId] = peerConnection;
 
-            // Pridanie lokálneho streamu do PeerConnection
             localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
 
-            // Spracovanie ICE kandidátov
             peerConnection.onicecandidate = event => {
                 if (event.candidate) {
                     push(ref(database, `candidates/${remoteUserId}`), {
@@ -106,15 +114,13 @@
                 }
             };
 
-            // Pridanie vzdialeného streamu na obrazovku
             peerConnection.ontrack = event => {
                 const remoteVideo = document.createElement("video");
                 remoteVideo.autoplay = true;
                 remoteVideo.srcObject = event.streams[0];
-                document.body.appendChild(remoteVideo);
+                videoContainer.appendChild(remoteVideo);
             };
 
-            // Vytvorenie a odoslanie offer
             peerConnection.createOffer()
                 .then(offer => peerConnection.setLocalDescription(offer))
                 .then(() => {
@@ -137,7 +143,6 @@
             });
         }
 
-        // Počúvanie na nové offers
         const offersRef = ref(database, `offers/${userId}`);
         onChildAdded(offersRef, snapshot => {
             const data = snapshot.val();
@@ -145,7 +150,6 @@
                 const peerConnection = new RTCPeerConnection(configuration);
                 peerConnections[data.from] = peerConnection;
 
-                // Spracovanie ICE kandidátov
                 peerConnection.onicecandidate = event => {
                     if (event.candidate) {
                         push(ref(database, `candidates/${data.from}`), {
@@ -155,15 +159,14 @@
                     }
                 };
 
-                // Pridanie vzdialeného streamu na obrazovku
                 peerConnection.ontrack = event => {
                     const remoteVideo = document.createElement("video");
                     remoteVideo.autoplay = true;
                     remoteVideo.srcObject = event.streams[0];
-                    document.body.appendChild(remoteVideo);
+                    videoContainer.appendChild(remoteVideo);
                 };
 
-                peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer))
+                peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
                     .then(() => peerConnection.createAnswer())
                     .then(answer => peerConnection.setLocalDescription(answer))
                     .then(() => {
@@ -177,7 +180,7 @@
             }
         });
 
-        // Spracovanie ICE kandidátov
+        const candidatesRef = ref(database, "candidates");
         onChildAdded(candidatesRef, snapshot => {
             const data = snapshot.val();
             if (data && peerConnections[data.from]) {
