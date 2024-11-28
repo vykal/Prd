@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Firebase WebRTC Video Chat</title>
+  <title>WebRTC + Firebase Video Chat</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -32,7 +32,7 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.16.0/firebase-app.js";
-    import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/9.16.0/firebase-database.js";
+    import { getDatabase, ref, set, onValue, remove, push } from "https://www.gstatic.com/firebasejs/9.16.0/firebase-database.js";
 
     // Firebase Configuration
     const firebaseConfig = {
@@ -52,7 +52,7 @@
 
     // Generate unique user ID
     const userId = `user-${Math.random().toString(36).substring(2, 15)}`;
-    const connections = {}; // Store WebRTC connections
+    const connections = {}; // Store connections with other users
     let localStream;
 
     const localVideo = document.getElementById("localVideo");
@@ -76,14 +76,14 @@
       }
     }
 
-    // Create WebRTC connection
+    // Create a WebRTC connection
     function createConnection(remoteUserId) {
       const peerConnection = new RTCPeerConnection();
 
-      // Add local stream to the peer connection
+      // Add local stream to connection
       localStream.getTracks().forEach((track) => peerConnection.addTrack(track, localStream));
 
-      // When a remote stream is added, display it
+      // Listen for remote tracks
       peerConnection.ontrack = (event) => {
         let remoteVideo = document.getElementById(remoteUserId);
         if (!remoteVideo) {
@@ -96,10 +96,10 @@
         remoteVideo.srcObject = event.streams[0];
       };
 
-      // When ICE candidates are created, send them to the remote user
+      // Send ICE candidates to Firebase
       peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
-          set(ref(db, `iceCandidates/${userId}/${remoteUserId}`), event.candidate.toJSON());
+          push(ref(db, `candidates/${userId}/${remoteUserId}`), event.candidate.toJSON());
         }
       };
 
@@ -107,14 +107,14 @@
       return peerConnection;
     }
 
-    // Listen for new users and initiate connection
+    // Listen for new users and create connections
     onValue(ref(db, "users"), (snapshot) => {
       const users = snapshot.val() || {};
       Object.keys(users).forEach((remoteUserId) => {
         if (remoteUserId !== userId && !connections[remoteUserId]) {
           const peerConnection = createConnection(remoteUserId);
 
-          // Create an offer and send it to the remote user
+          // Create and send an offer
           peerConnection.createOffer().then((offer) => {
             peerConnection.setLocalDescription(offer);
             set(ref(db, `offers/${userId}/${remoteUserId}`), offer.toJSON());
@@ -123,23 +123,25 @@
       });
     });
 
-    // Listen for offers from other users
+    // Listen for incoming offers
     onValue(ref(db, `offers/${userId}`), (snapshot) => {
       const offers = snapshot.val() || {};
       Object.keys(offers).forEach((remoteUserId) => {
         if (!connections[remoteUserId]) {
           const peerConnection = createConnection(remoteUserId);
 
-          peerConnection.setRemoteDescription(new RTCSessionDescription(offers[remoteUserId]));
-          peerConnection.createAnswer().then((answer) => {
-            peerConnection.setLocalDescription(answer);
-            set(ref(db, `answers/${remoteUserId}/${userId}`), answer.toJSON());
-          });
+          // Set remote description and create an answer
+          peerConnection.setRemoteDescription(new RTCSessionDescription(offers[remoteUserId]))
+            .then(() => peerConnection.createAnswer())
+            .then((answer) => {
+              peerConnection.setLocalDescription(answer);
+              set(ref(db, `answers/${remoteUserId}/${userId}`), answer.toJSON());
+            });
         }
       });
     });
 
-    // Listen for answers to your offers
+    // Listen for answers to our offers
     onValue(ref(db, `answers/${userId}`), (snapshot) => {
       const answers = snapshot.val() || {};
       Object.keys(answers).forEach((remoteUserId) => {
@@ -151,13 +153,14 @@
     });
 
     // Listen for ICE candidates
-    onValue(ref(db, `iceCandidates/${userId}`), (snapshot) => {
+    onValue(ref(db, `candidates/${userId}`), (snapshot) => {
       const candidates = snapshot.val() || {};
       Object.keys(candidates).forEach((remoteUserId) => {
         const peerConnection = connections[remoteUserId];
         if (peerConnection) {
-          const candidate = new RTCIceCandidate(candidates[remoteUserId]);
-          peerConnection.addIceCandidate(candidate);
+          Object.values(candidates[remoteUserId]).forEach((candidate) => {
+            peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+          });
         }
       });
     });
