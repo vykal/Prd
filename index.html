@@ -1,210 +1,91 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Video Stretnutie</title>
-    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js"></script>
-    <style>
-        body {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 20px;
-            justify-content: center;
-            align-items: flex-start;
-            margin: 0;
-            padding: 20px;
-            background-color: #f4f4f9;
-        }
-        #video-container {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 20px;
-            justify-content: center;
-            align-items: center;
-            width: 100%;
-        }
-        video {
-            width: 300px;
-            height: 200px;
-            border: 2px solid #333;
-            border-radius: 8px;
-            background-color: #000;
-        }
-        h1 {
-            text-align: center;
-            width: 100%;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Meeting</title>
 </head>
 <body>
-    <h1>Video Stretnutie</h1>
-    <div id="video-container"></div>
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-        import { getDatabase, ref, set, push, onChildAdded, onChildRemoved, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+  <h1>Video Meeting</h1>
+  <div id="videos"></div>
 
-        // Firebase konfigurácia
-        const firebaseConfig = {
-            apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
-            authDomain: "videjo-d0996.firebaseapp.com",
-            databaseURL: "https://videjo-d0996-default-rtdb.europe-west1.firebasedatabase.app",
-            projectId: "videjo-d0996",
-            storageBucket: "videjo-d0996.appspot.com",
-            messagingSenderId: "175126755237",
-            appId: "1:175126755237:web:8cf31d7a4d08f9fb2bda4c",
-            measurementId: "G-6Q2BJX1FE5"
-        };
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-app.js";
+    import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/9.17.2/firebase-database.js";
 
-        const app = initializeApp(firebaseConfig);
-        const database = getDatabase(app);
+    // Your web app's Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
+      authDomain: "videjo-d0996.firebaseapp.com",
+      databaseURL: "https://videjo-d0996-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId: "videjo-d0996",
+      storageBucket: "videjo-d0996.firebasestorage.app",
+      messagingSenderId: "175126755237",
+      appId: "1:175126755237:web:8cf31d7a4d08f9fb2bda4c",
+      measurementId: "G-6Q2BJX1FE5"
+    };
 
-        const userId = `user_${Math.random().toString(36).substr(2, 9)}`;
-        const usersRef = ref(database, "users");
-        const videoContainer = document.getElementById("video-container");
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
 
-        let localStream = null;
-        const peerConnections = {};
-        const configuration = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+    // Helper to get a unique user ID
+    const userId = Math.random().toString(36).substring(2, 15);
 
-        // Funkcia na vytvorenie video elementu
-        function createVideoElement(stream, muted = false) {
-            const video = document.createElement("video");
-            video.autoplay = true;
-            video.muted = muted;
-            video.srcObject = stream;
-            videoContainer.appendChild(video);
+    // Get camera stream and display it
+    const startCamera = async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+
+      // Display user's own video
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      video.autoplay = true;
+      video.muted = true;
+      video.width = 200;
+      document.getElementById('videos').appendChild(video);
+
+      // Send stream data to Firebase
+      set(ref(db, `users/${userId}`), {
+        userId,
+        timestamp: Date.now()
+      });
+
+      return stream;
+    };
+
+    // Remove user from Firebase on page unload
+    window.addEventListener("beforeunload", () => {
+      remove(ref(db, `users/${userId}`));
+    });
+
+    // Display other users' streams
+    const updateVideos = () => {
+      onValue(ref(db, "users"), (snapshot) => {
+        const users = snapshot.val();
+        const container = document.getElementById('videos');
+        container.innerHTML = ""; // Clear videos before rendering
+
+        for (const id in users) {
+          if (id === userId) continue; // Skip current user's video
+
+          const videoPlaceholder = document.createElement('div');
+          videoPlaceholder.innerText = `User ${id}`;
+          videoPlaceholder.style.border = "1px solid black";
+          videoPlaceholder.style.width = "200px";
+          videoPlaceholder.style.height = "150px";
+          videoPlaceholder.style.background = "gray";
+          videoPlaceholder.style.margin = "10px";
+
+          container.appendChild(videoPlaceholder);
         }
+      });
+    };
 
-        // Pripojenie k lokálnej kamere
-        navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-            .then(stream => {
-                localStream = stream;
-                createVideoElement(localStream, true); // Lokálne video
-                registerUser();
-                setupFirebaseListeners();
-            })
-            .catch(err => console.error("Prístup ku kamere bol zamietnutý:", err));
-
-        // Registrácia používateľa
-        function registerUser() {
-            const userRef = ref(database, `users/${userId}`);
-            set(userRef, { id: userId, timestamp: Date.now() });
-            window.addEventListener("beforeunload", () => remove(userRef));
-        }
-
-        // Firebase poslucháče
-        function setupFirebaseListeners() {
-            // Pridanie nového používateľa
-            onChildAdded(usersRef, snapshot => {
-                const newUserId = snapshot.val().id;
-                if (newUserId !== userId) {
-                    setupPeerConnection(newUserId);
-                }
-            });
-
-            // Odstránenie používateľa
-            onChildRemoved(usersRef, snapshot => {
-                const removedUserId = snapshot.val().id;
-                if (peerConnections[removedUserId]) {
-                    peerConnections[removedUserId].close();
-                    delete peerConnections[removedUserId];
-                }
-            });
-        }
-
-        // Nastavenie PeerConnection
-        function setupPeerConnection(remoteUserId) {
-            const peerConnection = new RTCPeerConnection(configuration);
-            peerConnections[remoteUserId] = peerConnection;
-
-            // Pridanie lokálneho streamu
-            localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-
-            // ICE kandidáty
-            peerConnection.onicecandidate = event => {
-                if (event.candidate) {
-                    push(ref(database, `candidates/${remoteUserId}`), {
-                        from: userId,
-                        candidate: event.candidate
-                    });
-                }
-            };
-
-            // Spracovanie vzdialeného streamu
-            peerConnection.ontrack = event => {
-                createVideoElement(event.streams[0]); // Zobrazenie vzdialeného videa
-            };
-
-            // Vytvorenie a odoslanie ponuky
-            peerConnection.createOffer()
-                .then(offer => peerConnection.setLocalDescription(offer))
-                .then(() => {
-                    set(ref(database, `offers/${remoteUserId}`), {
-                        from: userId,
-                        offer: peerConnection.localDescription
-                    });
-                });
-
-            listenForAnswer(remoteUserId);
-        }
-
-        // Počúvanie odpovede
-        function listenForAnswer(remoteUserId) {
-            const answersRef = ref(database, `answers/${userId}`);
-            onChildAdded(answersRef, snapshot => {
-                const data = snapshot.val();
-                if (data && data.from === remoteUserId) {
-                    peerConnections[remoteUserId].setRemoteDescription(new RTCSessionDescription(data.answer));
-                }
-            });
-        }
-
-        // Počúvanie ponúk
-        const offersRef = ref(database, `offers/${userId}`);
-        onChildAdded(offersRef, snapshot => {
-            const data = snapshot.val();
-            if (data && !peerConnections[data.from]) {
-                const peerConnection = new RTCPeerConnection(configuration);
-                peerConnections[data.from] = peerConnection;
-
-                peerConnection.onicecandidate = event => {
-                    if (event.candidate) {
-                        push(ref(database, `candidates/${data.from}`), {
-                            from: userId,
-                            candidate: event.candidate
-                        });
-                    }
-                };
-
-                peerConnection.ontrack = event => {
-                    createVideoElement(event.streams[0]); // Pridanie vzdialeného videa
-                };
-
-                peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer))
-                    .then(() => peerConnection.createAnswer())
-                    .then(answer => peerConnection.setLocalDescription(answer))
-                    .then(() => {
-                        set(ref(database, `answers/${data.from}`), {
-                            from: userId,
-                            answer: peerConnection.localDescription
-                        });
-                    });
-
-                localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-            }
-        });
-
-        // Spracovanie ICE kandidátov
-        const candidatesRef = ref(database, "candidates");
-        onChildAdded(candidatesRef, snapshot => {
-            const data = snapshot.val();
-            if (data && peerConnections[data.from]) {
-                const candidate = new RTCIceCandidate(data.candidate);
-                peerConnections[data.from].addIceCandidate(candidate);
-            }
-        });
-    </script>
+    // Initialize the app
+    (async () => {
+      await startCamera();
+      updateVideos();
+    })();
+  </script>
 </body>
 </html>
