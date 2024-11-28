@@ -46,132 +46,137 @@
     // Unique user ID
     const userId = Math.random().toString(36).substring(2, 15);
 
-    // WebRTC Configuration
+    // WebRTC configuration
     const config = {
       iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
     };
-    const peers = {};
-    const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    const peers = {}; // Store peer connections
+    const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
 
-    // Add local video to the DOM
-    const addVideoStream = (stream, isLocal = false) => {
-      const video = document.createElement('video');
+    // Add local video to DOM
+    const addVideoStream = (stream, id) => {
+      const video = document.createElement("video");
       video.srcObject = stream;
       video.autoplay = true;
-      if (isLocal) video.muted = true;
-      document.getElementById('videos').appendChild(video);
+      video.muted = id === userId; // Mute local stream
+      video.dataset.userId = id;
+      document.getElementById("videos").appendChild(video);
     };
 
-    // Add local stream
-    addVideoStream(localStream, true);
+    // Add local stream to page
+    addVideoStream(localStream, userId);
 
-    // Notify Firebase about the new user
+    // Notify Firebase about new user
     set(ref(db, `users/${userId}`), { userId });
+
+    // Handle user disconnection
+    window.addEventListener("beforeunload", () => {
+      remove(ref(db, `users/${userId}`));
+    });
 
     // Listen for new users
     onValue(ref(db, "users"), (snapshot) => {
       const users = snapshot.val();
       for (const id in users) {
         if (id !== userId && !peers[id]) {
-          // Create a new WebRTC connection
-          const peerConnection = new RTCPeerConnection(config);
-
-          // Add local stream to connection
-          localStream.getTracks().forEach((track) => {
-            peerConnection.addTrack(track, localStream);
-          });
-
-          // Listen for remote streams
-          peerConnection.ontrack = (event) => {
-            const [remoteStream] = event.streams;
-            if (!document.querySelector(`[data-user="${id}"]`)) {
-              addVideoStream(remoteStream);
-            }
-          };
-
-          // Exchange ICE candidates
-          peerConnection.onicecandidate = (event) => {
-            if (event.candidate) {
-              push(ref(db, `signals/${id}`), {
-                from: userId,
-                candidate: event.candidate.toJSON()
-              });
-            }
-          };
-
-          // Create an offer
-          peerConnection.createOffer()
-            .then((offer) => {
-              peerConnection.setLocalDescription(offer);
-              push(ref(db, `signals/${id}`), {
-                from: userId,
-                offer: offer
-              });
-            });
-
-          peers[id] = peerConnection;
+          connectToNewUser(id);
         }
       }
     });
+
+    // WebRTC signaling logic
+    const connectToNewUser = (id) => {
+      const peerConnection = new RTCPeerConnection(config);
+
+      // Add local stream tracks
+      localStream.getTracks().forEach((track) => {
+        peerConnection.addTrack(track, localStream);
+      });
+
+      // Send ICE candidates to Firebase
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          push(ref(db, `signals/${id}`), {
+            from: userId,
+            candidate: event.candidate.toJSON(),
+          });
+        }
+      };
+
+      // Handle incoming streams
+      peerConnection.ontrack = (event) => {
+        const [remoteStream] = event.streams;
+        addVideoStream(remoteStream, id);
+      };
+
+      // Create offer and send it to Firebase
+      peerConnection.createOffer()
+        .then((offer) => {
+          peerConnection.setLocalDescription(offer);
+          push(ref(db, `signals/${id}`), {
+            from: userId,
+            offer,
+          });
+        });
+
+      peers[id] = peerConnection;
+    };
 
     // Listen for signaling messages
     onValue(ref(db, `signals/${userId}`), (snapshot) => {
       const signals = snapshot.val();
+      if (!signals) return;
+
       for (const key in signals) {
         const signal = signals[key];
-        if (signal.from !== userId) {
-          const peerConnection = peers[signal.from] || new RTCPeerConnection(config);
-          if (!peers[signal.from]) {
-            localStream.getTracks().forEach((track) => {
-              peerConnection.addTrack(track, localStream);
-            });
-            peers[signal.from] = peerConnection;
+        const { from, offer, answer, candidate } = signal;
 
-            // Handle ICE candidates
-            peerConnection.onicecandidate = (event) => {
-              if (event.candidate) {
-                push(ref(db, `signals/${signal.from}`), {
-                  from: userId,
-                  candidate: event.candidate.toJSON()
-                });
-              }
-            };
+        if (from === userId) continue;
 
-            // Handle remote streams
-            peerConnection.ontrack = (event) => {
-              const [remoteStream] = event.streams;
-              if (!document.querySelector(`[data-user="${signal.from}"]`)) {
-                addVideoStream(remoteStream);
-              }
-            };
-          }
+        let peerConnection = peers[from];
+        if (!peerConnection) {
+          peerConnection = new RTCPeerConnection(config);
+          localStream.getTracks().forEach((track) => {
+            peerConnection.addTrack(track, localStream);
+          });
 
-          if (signal.offer) {
-            peerConnection.setRemoteDescription(new RTCSessionDescription(signal.offer))
-              .then(() => peerConnection.createAnswer())
-              .then((answer) => {
-                peerConnection.setLocalDescription(answer);
-                push(ref(db, `signals/${signal.from}`), {
-                  from: userId,
-                  answer: answer
-                });
+          peerConnection.onicecandidate = (event) => {
+            if (event.candidate) {
+              push(ref(db, `signals/${from}`), {
+                from: userId,
+                candidate: event.candidate.toJSON(),
               });
-          }
+            }
+          };
 
-          if (signal.answer) {
-            peerConnection.setRemoteDescription(new RTCSessionDescription(signal.answer));
-          }
+          peerConnection.ontrack = (event) => {
+            const [remoteStream] = event.streams;
+            addVideoStream(remoteStream, from);
+          };
 
-          if (signal.candidate) {
-            peerConnection.addIceCandidate(new RTCIceCandidate(signal.candidate));
-          }
+          peers[from] = peerConnection;
+        }
+
+        if (offer) {
+          peerConnection.setRemoteDescription(new RTCSessionDescription(offer))
+            .then(() => peerConnection.createAnswer())
+            .then((answer) => {
+              peerConnection.setLocalDescription(answer);
+              push(ref(db, `signals/${from}`), {
+                from: userId,
+                answer,
+              });
+            });
+        }
+
+        if (answer) {
+          peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+        }
+
+        if (candidate) {
+          peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
         }
       }
-    });
-
-    // Remove user from Firebase on unload
-    window.addEventListener("beforeunload", () => {
-      remove(ref(db, `users/${userId}`));
     });
   </script>
 </body>
