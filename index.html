@@ -45,6 +45,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
         import { getDatabase, ref, set, push, onChildAdded, onChildRemoved, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
+        // Firebase konfigurácia
         const firebaseConfig = {
             apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
             authDomain: "videjo-d0996.firebaseapp.com",
@@ -61,44 +62,57 @@
 
         const userId = `user_${Math.random().toString(36).substr(2, 9)}`;
         const usersRef = ref(database, "users");
-
         const videoContainer = document.getElementById("video-container");
-
-        const localVideo = document.createElement("video");
-        localVideo.autoplay = true;
-        localVideo.muted = true;
-        videoContainer.appendChild(localVideo);
 
         let localStream = null;
         const peerConnections = {};
         const configuration = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
 
+        // Funkcia na pridanie videa do kontajnera
+        function createVideoElement(stream, muted = false) {
+            const video = document.createElement("video");
+            video.autoplay = true;
+            video.muted = muted;
+            video.srcObject = stream;
+            videoContainer.appendChild(video);
+        }
+
+        // Získanie prístupu ku kamere a mikrofónu
         navigator.mediaDevices.getUserMedia({ video: true, audio: true })
             .then(stream => {
                 localStream = stream;
-                localVideo.srcObject = stream;
-
-                const userRef = ref(database, `users/${userId}`);
-                set(userRef, { id: userId, timestamp: Date.now() });
-                window.addEventListener("beforeunload", () => remove(userRef));
-
-                onChildAdded(usersRef, snapshot => {
-                    const newUserId = snapshot.val().id;
-                    if (newUserId !== userId) {
-                        setupPeerConnection(newUserId);
-                    }
-                });
-
-                onChildRemoved(usersRef, snapshot => {
-                    const removedUserId = snapshot.val().id;
-                    if (peerConnections[removedUserId]) {
-                        peerConnections[removedUserId].close();
-                        delete peerConnections[removedUserId];
-                    }
-                });
+                createVideoElement(localStream, true); // Lokálne video
+                registerUser();
+                setupListeners();
             })
             .catch(err => console.error("Prístup ku kamere bol zamietnutý:", err));
 
+        // Registrácia používateľa do Firebase
+        function registerUser() {
+            const userRef = ref(database, `users/${userId}`);
+            set(userRef, { id: userId, timestamp: Date.now() });
+            window.addEventListener("beforeunload", () => remove(userRef));
+        }
+
+        // Nastavenie Firebase poslucháčov
+        function setupListeners() {
+            onChildAdded(usersRef, snapshot => {
+                const newUserId = snapshot.val().id;
+                if (newUserId !== userId) {
+                    setupPeerConnection(newUserId);
+                }
+            });
+
+            onChildRemoved(usersRef, snapshot => {
+                const removedUserId = snapshot.val().id;
+                if (peerConnections[removedUserId]) {
+                    peerConnections[removedUserId].close();
+                    delete peerConnections[removedUserId];
+                }
+            });
+        }
+
+        // Nastavenie PeerConnection pre nového používateľa
         function setupPeerConnection(remoteUserId) {
             const peerConnection = new RTCPeerConnection(configuration);
             peerConnections[remoteUserId] = peerConnection;
@@ -115,10 +129,7 @@
             };
 
             peerConnection.ontrack = event => {
-                const remoteVideo = document.createElement("video");
-                remoteVideo.autoplay = true;
-                remoteVideo.srcObject = event.streams[0];
-                videoContainer.appendChild(remoteVideo);
+                createVideoElement(event.streams[0]); // Pridanie vzdialeného videa
             };
 
             peerConnection.createOffer()
@@ -160,13 +171,10 @@
                 };
 
                 peerConnection.ontrack = event => {
-                    const remoteVideo = document.createElement("video");
-                    remoteVideo.autoplay = true;
-                    remoteVideo.srcObject = event.streams[0];
-                    videoContainer.appendChild(remoteVideo);
+                    createVideoElement(event.streams[0]); // Pridanie vzdialeného videa
                 };
 
-                peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
+                peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer))
                     .then(() => peerConnection.createAnswer())
                     .then(answer => peerConnection.setLocalDescription(answer))
                     .then(() => {
