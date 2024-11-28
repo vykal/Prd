@@ -46,6 +46,7 @@
 
         const userId = `user_${Math.random().toString(36).substr(2, 9)}`;
         const usersRef = ref(database, "users");
+        const candidatesRef = ref(database, "candidates");
 
         const localVideo = document.createElement("video");
         localVideo.autoplay = true;
@@ -73,11 +74,11 @@
                 onChildAdded(usersRef, snapshot => {
                     const newUserId = snapshot.val().id;
                     if (newUserId !== userId) {
-                        createPeerConnection(newUserId);
+                        setupPeerConnection(newUserId);
                     }
                 });
 
-                // Odstránenie používateľa pri odchode
+                // Počúvanie na odstránenie používateľa
                 onChildRemoved(usersRef, snapshot => {
                     const removedUserId = snapshot.val().id;
                     if (peerConnections[removedUserId]) {
@@ -88,22 +89,24 @@
             })
             .catch(err => console.error("Prístup ku kamere bol zamietnutý:", err));
 
-        function createPeerConnection(remoteUserId) {
+        function setupPeerConnection(remoteUserId) {
             const peerConnection = new RTCPeerConnection(configuration);
             peerConnections[remoteUserId] = peerConnection;
 
             // Pridanie lokálneho streamu do PeerConnection
             localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
 
-            // Vytvorenie ICE kandidátov
+            // Spracovanie ICE kandidátov
             peerConnection.onicecandidate = event => {
                 if (event.candidate) {
-                    const candidateRef = ref(database, `candidates/${remoteUserId}`);
-                    push(candidateRef, { from: userId, candidate: event.candidate });
+                    push(ref(database, `candidates/${remoteUserId}`), {
+                        from: userId,
+                        candidate: event.candidate
+                    });
                 }
             };
 
-            // Počúvanie na prichádzajúce streamy
+            // Pridanie vzdialeného streamu na obrazovku
             peerConnection.ontrack = event => {
                 const remoteVideo = document.createElement("video");
                 remoteVideo.autoplay = true;
@@ -115,24 +118,26 @@
             peerConnection.createOffer()
                 .then(offer => peerConnection.setLocalDescription(offer))
                 .then(() => {
-                    const offerRef = ref(database, `offers/${remoteUserId}`);
-                    set(offerRef, { from: userId, offer: peerConnection.localDescription });
+                    set(ref(database, `offers/${remoteUserId}`), {
+                        from: userId,
+                        offer: peerConnection.localDescription
+                    });
                 });
 
-            listenForAnswers(remoteUserId);
+            listenForAnswer(remoteUserId);
         }
 
-        function listenForAnswers(remoteUserId) {
-            const answerRef = ref(database, `answers/${userId}`);
-            onChildAdded(answerRef, snapshot => {
+        function listenForAnswer(remoteUserId) {
+            const answersRef = ref(database, `answers/${userId}`);
+            onChildAdded(answersRef, snapshot => {
                 const data = snapshot.val();
-                if (data.from === remoteUserId) {
-                    const desc = new RTCSessionDescription(data.answer);
-                    peerConnections[remoteUserId].setRemoteDescription(desc);
+                if (data && data.from === remoteUserId) {
+                    peerConnections[remoteUserId].setRemoteDescription(new RTCSessionDescription(data.answer));
                 }
             });
         }
 
+        // Počúvanie na nové offers
         const offersRef = ref(database, `offers/${userId}`);
         onChildAdded(offersRef, snapshot => {
             const data = snapshot.val();
@@ -140,13 +145,17 @@
                 const peerConnection = new RTCPeerConnection(configuration);
                 peerConnections[data.from] = peerConnection;
 
+                // Spracovanie ICE kandidátov
                 peerConnection.onicecandidate = event => {
                     if (event.candidate) {
-                        const candidateRef = ref(database, `candidates/${data.from}`);
-                        push(candidateRef, { from: userId, candidate: event.candidate });
+                        push(ref(database, `candidates/${data.from}`), {
+                            from: userId,
+                            candidate: event.candidate
+                        });
                     }
                 };
 
+                // Pridanie vzdialeného streamu na obrazovku
                 peerConnection.ontrack = event => {
                     const remoteVideo = document.createElement("video");
                     remoteVideo.autoplay = true;
@@ -158,15 +167,17 @@
                     .then(() => peerConnection.createAnswer())
                     .then(answer => peerConnection.setLocalDescription(answer))
                     .then(() => {
-                        const answerRef = ref(database, `answers/${data.from}`);
-                        set(answerRef, { from: userId, answer: peerConnection.localDescription });
+                        set(ref(database, `answers/${data.from}`), {
+                            from: userId,
+                            answer: peerConnection.localDescription
+                        });
                     });
 
                 localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
             }
         });
 
-        const candidatesRef = ref(database, `candidates/${userId}`);
+        // Spracovanie ICE kandidátov
         onChildAdded(candidatesRef, snapshot => {
             const data = snapshot.val();
             if (data && peerConnections[data.from]) {
