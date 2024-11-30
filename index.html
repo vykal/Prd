@@ -10,56 +10,30 @@
             overflow: hidden;
         }
 
+        canvas {
+            display: block;
+            background: lightblue;
+        }
+
         video {
             position: absolute;
             border: 2px solid #ccc;
-            border-radius: 10px;
-            width: 120px;
-            height: 90px;
+            border-radius: 5px;
+            width: 150px;
+            height: 100px;
             object-fit: cover;
-        }
-
-        .controls {
-            position: absolute;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            display: flex;
-            justify-content: center;
-            gap: 10px;
-        }
-
-        .button {
-            width: 60px;
-            height: 60px;
-            background: gray;
-            color: white;
-            font-size: 20px;
-            font-weight: bold;
-            text-align: center;
-            line-height: 60px;
-            border-radius: 10px;
-            user-select: none;
-            cursor: pointer;
-        }
-
-        .button:active {
-            background: darkgray;
         }
     </style>
 </head>
 <body>
-<div class="controls">
-    <div class="button" id="left">◀</div>
-    <div class="button" id="up">⤒</div>
-    <div class="button" id="right">▶</div>
-</div>
+<canvas id="gameCanvas"></canvas>
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import { getDatabase, ref, set, onValue, remove, push } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-    const positionConfig = {
+    // Firebase konfigurácie
+    const firebaseConfigGame = {
         apiKey: "AIzaSyACWLI7L0zhZk7RFQyEXlOyQjtMPF-MgDw",
         authDomain: "hrav-1a742.firebaseapp.com",
         databaseURL: "https://hrav-1a742-default-rtdb.europe-west1.firebasedatabase.app",
@@ -70,7 +44,7 @@
         measurementId: "G-GFVZ6ZD5RE"
     };
 
-    const videoConfig = {
+    const firebaseConfigVideo = {
         apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
         authDomain: "videjo-d0996.firebaseapp.com",
         databaseURL: "https://videjo-d0996-default-rtdb.europe-west1.firebasedatabase.app",
@@ -81,136 +55,151 @@
         measurementId: "G-6Q2BJX1FE5"
     };
 
-    const positionApp = initializeApp(positionConfig, "positionApp");
-    const videoApp = initializeApp(videoConfig, "videoApp");
+    const appGame = initializeApp(firebaseConfigGame, "gameApp");
+    const appVideo = initializeApp(firebaseConfigVideo, "videoApp");
+    const dbGame = getDatabase(appGame);
+    const dbVideo = getDatabase(appVideo);
 
-    const positionDb = getDatabase(positionApp);
-    const videoDb = getDatabase(videoApp);
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
 
-    const userId = `player_${Math.random().toString(36).substring(2, 9)}`;
-    const peers = {};
-    const pendingCandidates = {};
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const playerId = `player_${Math.random().toString(36).substring(2, 9)}`;
+    const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+
+    const player = {
+        id: playerId,
+        x: Math.random() * (canvas.width - 150),
+        y: Math.random() * (canvas.height - 100),
+        width: 150,
+        height: 100,
+        videoElement: null
+    };
+
+    const players = {};
+
+    const addPlayerVideo = (player) => {
+        const video = document.createElement('video');
+        video.srcObject = player.id === playerId ? localStream : null;
+        video.autoplay = true;
+        video.muted = player.id === playerId;
+        video.style.left = `${player.x}px`;
+        video.style.top = `${player.y}px`;
+        video.setAttribute("data-id", player.id);
+        document.body.appendChild(video);
+        player.videoElement = video;
+    };
+
+    const updatePlayerPosition = (player) => {
+        if (player.videoElement) {
+            player.videoElement.style.left = `${player.x}px`;
+            player.videoElement.style.top = `${player.y}px`;
+        }
+    };
+
+    const sendPlayerData = () => {
+        set(ref(dbGame, `players/${playerId}`), {
+            id: player.id,
+            x: player.x,
+            y: player.y
+        });
+    };
+
+    const removePlayer = () => {
+        const playerRef = ref(dbGame, `players/${playerId}`);
+        remove(playerRef);
+    };
+
+    window.addEventListener('beforeunload', removePlayer);
+
+    onValue(ref(dbGame, "players"), (snapshot) => {
+        const data = snapshot.val() || {};
+        Object.keys(data).forEach(id => {
+            if (id === playerId) return;
+            if (!players[id]) {
+                players[id] = { ...data[id] };
+                addPlayerVideo(players[id]);
+            } else {
+                players[id].x = data[id].x;
+                players[id].y = data[id].y;
+                updatePlayerPosition(players[id]);
+            }
+        });
+
+        Object.keys(players).forEach(id => {
+            if (!data[id]) {
+                document.querySelector(`[data-id="${id}"]`).remove();
+                delete players[id];
+            }
+        });
+    });
+
+    window.addEventListener('keydown', (e) => {
+        const speed = 10;
+        switch (e.key) {
+            case "ArrowLeft":
+                player.x -= speed;
+                break;
+            case "ArrowRight":
+                player.x += speed;
+                break;
+            case "ArrowUp":
+                player.y -= speed;
+                break;
+            case "ArrowDown":
+                player.y += speed;
+                break;
+        }
+
+        updatePlayerPosition(player);
+        sendPlayerData();
+    });
+
+    addPlayerVideo(player);
+    sendPlayerData();
+
+    // WebRTC video meeting logic
     const config = {
         iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
     };
 
-    const player = {
-        id: userId,
-        x: Math.random() * window.innerWidth - 120,
-        y: Math.random() * window.innerHeight - 90,
-        width: 120,
-        height: 90,
+    const peers = {};
+    const signalsRef = ref(dbVideo, "signals");
+
+    const createPeerConnection = (id, stream) => {
+        const peerConnection = new RTCPeerConnection(config);
+        stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+        peerConnection.ontrack = (event) => {
+            const [remoteStream] = event.streams;
+            if (players[id]) players[id].videoElement.srcObject = remoteStream;
+        };
+
+        return peerConnection;
     };
 
-    const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    const videoElement = document.createElement("video");
-    videoElement.id = userId;
-    videoElement.autoplay = true;
-    videoElement.muted = true;
-    videoElement.style.position = "absolute";
-    videoElement.style.left = `${player.x}px`;
-    videoElement.style.top = `${player.y}px`;
-    videoElement.srcObject = localStream;
-    document.body.appendChild(videoElement);
+    onValue(signalsRef, (snapshot) => {
+        const signals = snapshot.val() || {};
+        Object.keys(signals).forEach(key => {
+            const { from, offer, candidate } = signals[key];
+            if (from === playerId) return;
 
-    async function connectToNewUser(id) {
-        const peer = new RTCPeerConnection(config);
-        peers[id] = peer;
-
-        localStream.getTracks().forEach((track) => peer.addTrack(track, localStream));
-
-        peer.onicecandidate = (event) => {
-            if (event.candidate) {
-                push(ref(videoDb, `signals/${id}`), {
-                    from: userId,
-                    candidate: event.candidate.toJSON(),
-                });
+            if (!peers[from]) {
+                peers[from] = createPeerConnection(from, localStream);
             }
-        };
-
-        peer.ontrack = (event) => {
-            const [stream] = event.streams;
-            const remoteVideo = document.createElement("video");
-            remoteVideo.id = id;
-            remoteVideo.autoplay = true;
-            remoteVideo.style.position = "absolute";
-            document.body.appendChild(remoteVideo);
-            remoteVideo.srcObject = stream;
-        };
-
-        const offer = await peer.createOffer();
-        await peer.setLocalDescription(offer);
-        push(ref(videoDb, `signals/${id}`), { from: userId, offer });
-    }
-
-    onValue(ref(videoDb, "signals"), (snapshot) => {
-        const signals = snapshot.val();
-        if (!signals) return;
-
-        Object.entries(signals).forEach(([key, { from, offer, answer, candidate }]) => {
-            if (from === userId) return;
-
-            if (!peers[from]) connectToNewUser(from);
-
-            const peer = peers[from];
 
             if (offer) {
-                peer.setRemoteDescription(new RTCSessionDescription(offer)).then(() => {
-                    return peer.createAnswer();
-                }).then((answer) => {
-                    return peer.setLocalDescription(answer);
-                }).then(() => {
-                    push(ref(videoDb, `signals/${from}`), { from: userId, answer });
-                });
-            }
-
-            if (answer) {
-                peer.setRemoteDescription(new RTCSessionDescription(answer));
+                peers[from].setRemoteDescription(new RTCSessionDescription(offer))
+                    .then(() => peers[from].createAnswer())
+                    .then(answer => peers[from].setLocalDescription(answer))
+                    .then(() => push(signalsRef, { from: playerId, answer: peers[from].localDescription }));
             }
 
             if (candidate) {
-                peer.addIceCandidate(new RTCIceCandidate(candidate));
+                peers[from].addIceCandidate(new RTCIceCandidate(candidate));
             }
         });
-    });
-
-    set(ref(videoDb, `users/${userId}`), { id: userId });
-
-    function movePlayer(dx = 0, dy = 0) {
-        player.x = Math.max(0, Math.min(player.x + dx, window.innerWidth - player.width));
-        player.y = Math.max(0, Math.min(player.y + dy, window.innerHeight - player.height));
-        videoElement.style.left = `${player.x}px`;
-        videoElement.style.top = `${player.y}px`;
-        set(ref(positionDb, `players/${userId}`), player);
-    }
-
-    document.getElementById("left").onmousedown = () => movePlayer(-10, 0);
-    document.getElementById("right").onmousedown = () => movePlayer(10, 0);
-    document.getElementById("up").onmousedown = () => movePlayer(0, -10);
-
-    onValue(ref(positionDb, "players"), (snapshot) => {
-        const players = snapshot.val();
-        if (!players) return;
-
-        Object.entries(players).forEach(([id, pos]) => {
-            if (id !== userId) {
-                let video = document.getElementById(id);
-                if (!video) {
-                    video = document.createElement("video");
-                    video.id = id;
-                    video.autoplay = true;
-                    video.style.position = "absolute";
-                    document.body.appendChild(video);
-                }
-                video.style.left = `${pos.x}px`;
-                video.style.top = `${pos.y}px`;
-            }
-        });
-    });
-
-    window.addEventListener("beforeunload", () => {
-        remove(ref(positionDb, `players/${userId}`));
-        remove(ref(videoDb, `users/${userId}`));
     });
 </script>
 </body>
