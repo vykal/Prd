@@ -55,9 +55,6 @@
 
     const playerId = `player_${Math.random().toString(36).substring(2, 9)}`;
     const players = {};
-
-    // WebRTC konfigurácia
-    const config = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
     const peers = {};
     const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
 
@@ -80,61 +77,83 @@
 
     addVideoStream(playerId, localStream);
 
-    // Firebase signály pre WebRTC
-    const handleSignals = (id, peer) => {
-        onValue(ref(dbVideo, `signals/${id}`), (snapshot) => {
-            const signals = snapshot.val();
-            if (!signals) return;
-
-            Object.values(signals).forEach(({ from, offer, answer, candidate }) => {
-                if (from === playerId) return;
-
-                if (offer) {
-                    peer.setRemoteDescription(new RTCSessionDescription(offer)).then(() => {
-                        peer.createAnswer().then((answer) => {
-                            peer.setLocalDescription(answer);
-                            push(ref(dbVideo, `signals/${from}`), { from: playerId, answer });
-                        });
-                    });
-                }
-
-                if (answer) {
-                    peer.setRemoteDescription(new RTCSessionDescription(answer));
-                }
-
-                if (candidate) {
-                    peer.addIceCandidate(new RTCIceCandidate(candidate));
-                }
-            });
+    // WebRTC signály a pripojenie
+    const createPeerConnection = (id) => {
+        const peer = new RTCPeerConnection({
+            iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
         });
-    };
 
-    // Pripojenie nových hráčov
-    const connectToNewUser = (id) => {
-        const peer = new RTCPeerConnection(config);
         peers[id] = peer;
 
+        // Pridanie lokálnych streamov
         localStream.getTracks().forEach(track => peer.addTrack(track, localStream));
+
+        // ICE kandidáty
         peer.onicecandidate = ({ candidate }) => {
             if (candidate) {
-                push(ref(dbVideo, `signals/${id}`), { from: playerId, candidate });
+                push(ref(dbVideo, `signals/${id}`), {
+                    from: playerId,
+                    candidate
+                });
             }
         };
 
+        // Stream od iných používateľov
         peer.ontrack = ({ streams }) => {
             const [remoteStream] = streams;
             addVideoStream(id, remoteStream);
         };
 
-        peer.createOffer().then((offer) => {
+        return peer;
+    };
+
+    // Signálovanie medzi používateľmi
+    const handleSignal = (signal) => {
+        const { from, offer, answer, candidate } = signal;
+
+        if (!peers[from]) {
+            const peer = createPeerConnection(from);
+
+            if (offer) {
+                peer.setRemoteDescription(new RTCSessionDescription(offer))
+                    .then(() => peer.createAnswer())
+                    .then(answer => {
+                        peer.setLocalDescription(answer);
+                        push(ref(dbVideo, `signals/${from}`), { from: playerId, answer });
+                    });
+            }
+        }
+
+        const peer = peers[from];
+
+        if (answer) {
+            peer.setRemoteDescription(new RTCSessionDescription(answer));
+        }
+
+        if (candidate) {
+            peer.addIceCandidate(new RTCIceCandidate(candidate));
+        }
+    };
+
+    // Posielanie ponúk (offers)
+    const sendOffer = (id) => {
+        const peer = createPeerConnection(id);
+
+        peer.createOffer().then(offer => {
             peer.setLocalDescription(offer);
             push(ref(dbVideo, `signals/${id}`), { from: playerId, offer });
         });
-
-        handleSignals(id, peer);
     };
 
-    // Firebase Game Database pre pohyb
+    // Načítanie signálov
+    onValue(ref(dbVideo, `signals/${playerId}`), (snapshot) => {
+        const signals = snapshot.val();
+        if (!signals) return;
+
+        Object.values(signals).forEach(signal => handleSignal(signal));
+    });
+
+    // Firebase na ukladanie pozície hráčov
     const sendPlayerData = (x, y) => {
         set(ref(dbGame, `players/${playerId}`), { id: playerId, x, y });
     };
@@ -145,13 +164,12 @@
 
         Object.keys(data).forEach(id => {
             if (!players[id]) {
-                players[id] = { x: data[id].x, y: data[id].y };
-                connectToNewUser(id);
+                sendOffer(id);
             }
         });
     });
 
-    // Pohyb na obrazovke
+    // Pohyb hráča na obrazovke
     window.addEventListener("keydown", (e) => {
         const speed = 10;
         const videoElement = players[playerId].videoElement;
