@@ -107,7 +107,7 @@
         return peer;
     };
 
-    // Signálovanie medzi používateľmi
+    // Spracovanie signálov
     const handleSignal = (signal) => {
         const { from, offer, answer, candidate } = signal;
 
@@ -163,7 +163,7 @@
         if (!data) return;
 
         Object.keys(data).forEach(id => {
-            if (!players[id]) {
+            if (!players[id] && id !== playerId) {
                 sendOffer(id);
             }
         });
