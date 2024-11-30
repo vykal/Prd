@@ -8,191 +8,246 @@
         body {
             margin: 0;
             overflow: hidden;
+            position: relative;
         }
-
+        canvas {
+            display: block;
+            background: lightblue;
+        }
         video {
             position: absolute;
-            border: 2px solid #ccc;
-            border-radius: 5px;
-            width: 150px;
-            height: 100px;
-            object-fit: cover;
+            border: 2px solid white;
+            border-radius: 10px;
         }
     </style>
 </head>
 <body>
+<canvas id="gameCanvas"></canvas>
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-    import { getDatabase, ref, set, onValue, remove, push } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-    // Firebase konfigurácie
-    const firebaseConfigGame = {
+    // Firebase konfigurácia pre polohu
+    const positionFirebaseConfig = {
         apiKey: "AIzaSyACWLI7L0zhZk7RFQyEXlOyQjtMPF-MgDw",
         authDomain: "hrav-1a742.firebaseapp.com",
         databaseURL: "https://hrav-1a742-default-rtdb.europe-west1.firebasedatabase.app",
         projectId: "hrav-1a742",
         storageBucket: "hrav-1a742.firebasestorage.app",
         messagingSenderId: "1093772001619",
-        appId: "1:1093772001619:web:97d8e6dd9d5cd28da761a6",
-        measurementId: "G-GFVZ6ZD5RE"
+        appId: "1:1093772001619:web:97d8e6dd9d5cd28da761a6"
     };
 
-    const firebaseConfigVideo = {
+    // Firebase konfigurácia pre video signály
+    const videoFirebaseConfig = {
         apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
         authDomain: "videjo-d0996.firebaseapp.com",
         databaseURL: "https://videjo-d0996-default-rtdb.europe-west1.firebasedatabase.app",
         projectId: "videjo-d0996",
         storageBucket: "videjo-d0996.firebasestorage.app",
         messagingSenderId: "175126755237",
-        appId: "1:175126755237:web:8cf31d7a4d08f9fb2bda4c",
-        measurementId: "G-6Q2BJX1FE5"
+        appId: "1:175126755237:web:8cf31d7a4d08f9fb2bda4c"
     };
 
-    const appGame = initializeApp(firebaseConfigGame, "gameApp");
-    const appVideo = initializeApp(firebaseConfigVideo, "videoApp");
-    const dbGame = getDatabase(appGame);
-    const dbVideo = getDatabase(appVideo);
+    // Inicializácia Firebase
+    const positionApp = initializeApp(positionFirebaseConfig, "positionApp");
+    const videoApp = initializeApp(videoFirebaseConfig, "videoApp");
+    const positionDb = getDatabase(positionApp);
+    const videoDb = getDatabase(videoApp);
 
-    const playerId = `player_${Math.random().toString(36).substring(2, 9)}`;
-    const players = {};
-    const peers = {};
+    // Hlavné prvky
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    // Lokálne video
     const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    const videoElement = document.createElement("video");
+    videoElement.srcObject = localStream;
+    videoElement.autoplay = true;
+    videoElement.muted = true; // Vypnutie vlastného zvuku
+    videoElement.style.width = "100px";
+    videoElement.style.height = "100px";
+    document.body.appendChild(videoElement);
 
-    // Pridať video stream na obrazovku
-    const addVideoStream = (id, stream) => {
-        if (players[id] && players[id].videoElement) return;
-
-        const video = document.createElement("video");
-        video.srcObject = stream;
-        video.autoplay = true;
-        video.muted = id === playerId;
-        video.style.position = "absolute";
-        video.style.left = `${Math.random() * window.innerWidth}px`;
-        video.style.top = `${Math.random() * window.innerHeight}px`;
-        video.dataset.id = id;
-        document.body.appendChild(video);
-
-        players[id] = { videoElement: video };
+    // Unikátne ID hráča
+    const playerId = `player_${Math.random().toString(36).substring(2, 9)}`;
+    const player = {
+        id: playerId,
+        x: Math.random() * (canvas.width - 100),
+        y: Math.random() * (canvas.height - 100),
+        width: 100,
+        height: 100,
     };
+    const players = {};
 
-    addVideoStream(playerId, localStream);
+    // Ovládanie hráča
+    const keys = {};
+    window.addEventListener("keydown", (e) => keys[e.key] = true);
+    window.addEventListener("keyup", (e) => keys[e.key] = false);
 
-    // WebRTC signály a pripojenie
-    const createPeerConnection = (id) => {
-        const peer = new RTCPeerConnection({
-            iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
-        });
+    function movePlayer() {
+        if (keys["ArrowLeft"]) player.x -= 5;
+        if (keys["ArrowRight"]) player.x += 5;
+        if (keys["ArrowUp"]) player.y -= 5;
+        if (keys["ArrowDown"]) player.y += 5;
 
-        peers[id] = peer;
+        // Obmedziť pohyb v hraniciach
+        player.x = Math.max(0, Math.min(canvas.width - player.width, player.x));
+        player.y = Math.max(0, Math.min(canvas.height - player.height, player.y));
+    }
 
-        // Pridanie lokálnych streamov
-        localStream.getTracks().forEach(track => peer.addTrack(track, localStream));
-
-        // ICE kandidáty
-        peer.onicecandidate = ({ candidate }) => {
-            if (candidate) {
-                push(ref(dbVideo, `signals/${id}`), {
-                    from: playerId,
-                    candidate
-                });
+    function drawPlayers() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        Object.values(players).forEach(p => {
+            const video = document.querySelector(`[data-id="${p.id}"]`);
+            if (video) {
+                video.style.left = `${p.x}px`;
+                video.style.top = `${p.y}px`;
             }
-        };
-
-        // Stream od iných používateľov
-        peer.ontrack = ({ streams }) => {
-            const [remoteStream] = streams;
-            addVideoStream(id, remoteStream);
-        };
-
-        return peer;
-    };
-
-    // Spracovanie signálov
-    const handleSignal = (signal) => {
-        const { from, offer, answer, candidate } = signal;
-
-        if (!peers[from]) {
-            const peer = createPeerConnection(from);
-
-            if (offer) {
-                peer.setRemoteDescription(new RTCSessionDescription(offer))
-                    .then(() => peer.createAnswer())
-                    .then(answer => {
-                        peer.setLocalDescription(answer);
-                        push(ref(dbVideo, `signals/${from}`), { from: playerId, answer });
-                    });
-            }
-        }
-
-        const peer = peers[from];
-
-        if (answer) {
-            peer.setRemoteDescription(new RTCSessionDescription(answer));
-        }
-
-        if (candidate) {
-            peer.addIceCandidate(new RTCIceCandidate(candidate));
-        }
-    };
-
-    // Posielanie ponúk (offers)
-    const sendOffer = (id) => {
-        const peer = createPeerConnection(id);
-
-        peer.createOffer().then(offer => {
-            peer.setLocalDescription(offer);
-            push(ref(dbVideo, `signals/${id}`), { from: playerId, offer });
         });
-    };
+    }
 
-    // Načítanie signálov
-    onValue(ref(dbVideo, `signals/${playerId}`), (snapshot) => {
-        const signals = snapshot.val();
-        if (!signals) return;
+    // Pridanie lokálneho videa
+    videoElement.dataset.id = playerId;
 
-        Object.values(signals).forEach(signal => handleSignal(signal));
-    });
+    // Aktualizácia pozície do Firebase
+    function sendPosition() {
+        set(ref(positionDb, `players/${player.id}`), player);
+    }
 
-    // Firebase na ukladanie pozície hráčov
-    const sendPlayerData = (x, y) => {
-        set(ref(dbGame, `players/${playerId}`), { id: playerId, x, y });
-    };
-
-    onValue(ref(dbGame, "players"), (snapshot) => {
-        const data = snapshot.val();
-        if (!data) return;
-
+    // Načítanie hráčov z Firebase
+    const playersRef = ref(positionDb, "players");
+    onValue(playersRef, (snapshot) => {
+        const data = snapshot.val() || {};
         Object.keys(data).forEach(id => {
-            if (!players[id] && id !== playerId) {
-                sendOffer(id);
+            players[id] = data[id];
+            if (!document.querySelector(`[data-id="${id}"]`) && id !== playerId) {
+                const remoteVideo = document.createElement("video");
+                remoteVideo.dataset.id = id;
+                remoteVideo.style.position = "absolute";
+                remoteVideo.style.width = "100px";
+                remoteVideo.style.height = "100px";
+                remoteVideo.autoplay = true;
+                document.body.appendChild(remoteVideo);
             }
         });
+        drawPlayers();
     });
 
-    // Pohyb hráča na obrazovke
-    window.addEventListener("keydown", (e) => {
-        const speed = 10;
-        const videoElement = players[playerId].videoElement;
-        let x = parseInt(videoElement.style.left || 0);
-        let y = parseInt(videoElement.style.top || 0);
-
-        if (e.key === "ArrowUp") y -= speed;
-        if (e.key === "ArrowDown") y += speed;
-        if (e.key === "ArrowLeft") x -= speed;
-        if (e.key === "ArrowRight") x += speed;
-
-        videoElement.style.left = `${x}px`;
-        videoElement.style.top = `${y}px`;
-        sendPlayerData(x, y);
-    });
-
-    sendPlayerData(100, 100);
-
-    // Cleanup pri odchode
+    // Odstránenie hráča pri odpojení
     window.addEventListener("beforeunload", () => {
-        remove(ref(dbGame, `players/${playerId}`));
-        remove(ref(dbVideo, `signals/${playerId}`));
+        remove(ref(positionDb, `players/${player.id}`));
     });
+
+    // Herná slučka
+    function gameLoop() {
+        movePlayer();
+        sendPosition();
+        requestAnimationFrame(gameLoop);
+    }
+    gameLoop();
+
+    // Video signály
+    // WebRTC konfigurácia a logika sa použije z predchádzajúceho kódu pre video meeting.
+    // Tento kód môžete vložiť sem na správu video streamov.
+const config = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+const peers = {};
+const pendingCandidates = {};
+
+function connectToNewUser(id) {
+    const peerConnection = new RTCPeerConnection(config);
+
+    // Pridanie lokálneho videa
+    localStream.getTracks().forEach(track => {
+        peerConnection.addTrack(track, localStream);
+    });
+
+    // Odosielanie ICE kandidátov
+    peerConnection.onicecandidate = event => {
+        if (event.candidate) {
+            set(ref(videoDb, `signals/${id}/${playerId}`), {
+                candidate: event.candidate.toJSON(),
+            });
+        }
+    };
+
+    // Pridanie prijatého videa
+    peerConnection.ontrack = event => {
+        const [remoteStream] = event.streams;
+        const remoteVideo = document.querySelector(`[data-id="${id}"]`);
+        if (remoteVideo) {
+            remoteVideo.srcObject = remoteStream;
+        }
+    };
+
+    peers[id] = peerConnection;
+
+    // Vytvorenie ponuky
+    peerConnection.createOffer().then(offer => {
+        peerConnection.setLocalDescription(offer);
+        set(ref(videoDb, `signals/${id}/${playerId}`), { offer });
+    });
+}
+
+// Správa signálov z Firebase
+onValue(ref(videoDb, `signals/${playerId}`), snapshot => {
+    const signals = snapshot.val();
+    if (!signals) return;
+
+    Object.keys(signals).forEach(fromId => {
+        const { offer, answer, candidate } = signals[fromId];
+        let peerConnection = peers[fromId];
+
+        // Pripojenie nového používateľa
+        if (!peerConnection) {
+            peerConnection = new RTCPeerConnection(config);
+
+            localStream.getTracks().forEach(track => {
+                peerConnection.addTrack(track, localStream);
+            });
+
+            peerConnection.onicecandidate = event => {
+                if (event.candidate) {
+                    set(ref(videoDb, `signals/${fromId}/${playerId}`), {
+                        candidate: event.candidate.toJSON(),
+                    });
+                }
+            };
+
+            peerConnection.ontrack = event => {
+                const [remoteStream] = event.streams;
+                const remoteVideo = document.querySelector(`[data-id="${fromId}"]`);
+                if (remoteVideo) {
+                    remoteVideo.srcObject = remoteStream;
+                }
+            };
+
+            peers[fromId] = peerConnection;
+        }
+
+        // Spracovanie ponuky
+        if (offer && peerConnection.signalingState === "stable") {
+            peerConnection.setRemoteDescription(new RTCSessionDescription(offer)).then(() => {
+                peerConnection.createAnswer().then(answer => {
+                    peerConnection.setLocalDescription(answer);
+                    set(ref(videoDb, `signals/${fromId}/${playerId}`), { answer });
+                });
+            });
+        }
+
+        // Spracovanie odpovede
+        if (answer) {
+            peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+        }
+
+        // Spracovanie ICE kandidátov
+        if (candidate) {
+            peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        }
+    });
+});
 </script>
 </body>
 </html>
