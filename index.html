@@ -3,11 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Interactive Video Meeting</title>
+    <title>Interaktívny Video Meeting</title>
     <style>
         body {
             margin: 0;
             overflow: hidden;
+            font-family: Arial, sans-serif;
         }
         canvas {
             display: block;
@@ -26,168 +27,124 @@
 <body>
     <canvas id="gameCanvas"></canvas>
     <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-    import { getDatabase, ref, set, onValue, remove, push } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+        import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-    // Firebase configurations
-    const positionFirebaseConfig = {
-        apiKey: "AIzaSyACWLI7L0zhZk7RFQyEXlOyQjtMPF-MgDw",
-        authDomain: "hrav-1a742.firebaseapp.com",
-        databaseURL: "https://hrav-1a742-default-rtdb.europe-west1.firebasedatabase.app",
-        projectId: "hrav-1a742",
-        storageBucket: "hrav-1a742.firebasestorage.app",
-        messagingSenderId: "1093772001619",
-        appId: "1:1093772001619:web:97d8e6dd9d5cd28da761a6",
-    };
-
-    const signalingFirebaseConfig = {
-        apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
-        authDomain: "videjo-d0996.firebaseapp.com",
-        databaseURL: "https://videjo-d0996-default-rtdb.europe-west1.firebasedatabase.app",
-        projectId: "videjo-d0996",
-        storageBucket: "videjo-d0996.firebasestorage.app",
-        messagingSenderId: "175126755237",
-        appId: "1:175126755237:web:8cf31d7a4d08f9fb2bda4c",
-    };
-
-    // Initialize Firebase
-    const positionApp = initializeApp(positionFirebaseConfig, "positionApp");
-    const signalingApp = initializeApp(signalingFirebaseConfig, "signalingApp");
-
-    const positionDB = getDatabase(positionApp);
-    const signalingDB = getDatabase(signalingApp);
-
-    const canvas = document.getElementById("gameCanvas");
-    const ctx = canvas.getContext("2d");
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-
-    const playerId = `player_${Math.random().toString(36).substring(2, 9)}`;
-    const player = {
-        id: playerId,
-        x: Math.random() * (canvas.width - 150),
-        y: Math.random() * (canvas.height - 100),
-        dx: 0,
-        dy: 0,
-    };
-
-    const players = {};
-    const peers = {};
-    const pendingCandidates = {};
-    const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-
-    const addVideoElement = (id, stream) => {
-        let video = document.querySelector(`video[data-id="${id}"]`);
-        if (!video) {
-            video = document.createElement("video");
-            video.srcObject = stream;
-            video.autoplay = true;
-            video.muted = id === playerId;
-            video.dataset.id = id;
-            video.style.position = "absolute";
-            document.body.appendChild(video);
-        }
-    };
-
-    addVideoElement(playerId, localStream);
-
-    const movePlayer = () => {
-        player.x += player.dx;
-        player.y += player.dy;
-
-        if (player.x < 0) player.x = 0;
-        if (player.x + 150 > canvas.width) player.x = canvas.width - 150;
-        if (player.y < 0) player.y = 0;
-        if (player.y + 100 > canvas.height) player.y = canvas.height - 100;
-    };
-
-    const drawPlayers = () => {
-        Object.values(players).forEach(p => {
-            const videoElement = document.querySelector(`video[data-id="${p.id}"]`);
-            if (videoElement) {
-                videoElement.style.left = `${p.x}px`;
-                videoElement.style.top = `${p.y}px`;
-            }
-        });
-    };
-
-    const positionRef = ref(positionDB, `players/${player.id}`);
-    set(positionRef, player);
-
-    window.addEventListener("beforeunload", () => remove(positionRef));
-
-    onValue(ref(positionDB, "players"), (snapshot) => {
-        const data = snapshot.val() || {};
-        Object.assign(players, data);
-        drawPlayers();
-    });
-
-    window.addEventListener("keydown", (e) => {
-        if (e.key === "ArrowLeft") player.dx = -5;
-        if (e.key === "ArrowRight") player.dx = 5;
-        if (e.key === "ArrowUp") player.dy = -5;
-        if (e.key === "ArrowDown") player.dy = 5;
-    });
-
-    window.addEventListener("keyup", () => {
-        player.dx = 0;
-        player.dy = 0;
-    });
-
-    const signalingRef = ref(signalingDB, "signals");
-    localStream.getTracks().forEach(track => {
-        Object.keys(peers).forEach(id => peers[id].addTrack(track, localStream));
-    });
-
-    const connectToNewUser = (id) => {
-        if (peers[id]) return;
-        const peerConnection = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
-        peers[id] = peerConnection;
-
-        localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-
-        peerConnection.onicecandidate = (e) => {
-            if (e.candidate) push(signalingRef, { from: playerId, to: id, candidate: e.candidate.toJSON() });
+        // Firebase konfigurácia pre polohu
+        const positionConfig = {
+            apiKey: "AIzaSyACWLI7L0zhZk7RFQyEXlOyQjtMPF-MgDw",
+            authDomain: "hrav-1a742.firebaseapp.com",
+            databaseURL: "https://hrav-1a742-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "hrav-1a742",
+            storageBucket: "hrav-1a742.appspot.com",
+            messagingSenderId: "1093772001619",
+            appId: "1:1093772001619:web:97d8e6dd9d5cd28da761a6",
         };
 
-        peerConnection.ontrack = (e) => addVideoElement(id, e.streams[0]);
+        // Firebase konfigurácia pre WebRTC
+        const videoConfig = {
+            apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
+            authDomain: "videjo-d0996.firebaseapp.com",
+            databaseURL: "https://videjo-d0996-default-rtdb.europe-west1.firebasedatabase.app",
+            projectId: "videjo-d0996",
+            storageBucket: "videjo-d0996.appspot.com",
+            messagingSenderId: "175126755237",
+            appId: "1:175126755237:web:8cf31d7a4d08f9fb2bda4c",
+        };
 
-        peerConnection.createOffer().then(offer => {
-            peerConnection.setLocalDescription(offer);
-            push(signalingRef, { from: playerId, to: id, offer });
-        });
-    };
+        // Inicializácia Firebase
+        const positionApp = initializeApp(positionConfig, "positionApp");
+        const videoApp = initializeApp(videoConfig, "videoApp");
+        const positionDb = getDatabase(positionApp);
+        const videoDb = getDatabase(videoApp);
 
-    onValue(signalingRef, (snapshot) => {
-        const signals = snapshot.val() || {};
-        Object.values(signals).forEach(({ from, to, offer, answer, candidate }) => {
-            if (to !== playerId) return;
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
 
-            const peerConnection = peers[from] || new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
-            peers[from] = peerConnection;
+        const userId = `player_${Math.random().toString(36).substring(2, 9)}`;
+        const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
 
-            if (offer) {
-                peerConnection.setRemoteDescription(new RTCSessionDescription(offer)).then(() => {
-                    peerConnection.createAnswer().then(answer => {
-                        peerConnection.setLocalDescription(answer);
-                        push(signalingRef, { from: playerId, to: from, answer });
-                    });
+        const player = {
+            id: userId,
+            x: Math.random() * (canvas.width - 150),
+            y: Math.random() * (canvas.height - 100),
+            width: 150,
+            height: 100,
+            videoElement: document.createElement("video"),
+        };
+
+        const players = {};
+
+        // Nastavenie lokálneho video streamu
+        player.videoElement.srcObject = localStream;
+        player.videoElement.autoplay = true;
+        player.videoElement.muted = true;
+        player.videoElement.dataset.id = userId;
+        document.body.appendChild(player.videoElement);
+
+        // Pohyb hráča
+        function movePlayer() {
+            document.addEventListener("keydown", (e) => {
+                if (e.key === "ArrowUp") player.y -= 10;
+                if (e.key === "ArrowDown") player.y += 10;
+                if (e.key === "ArrowLeft") player.x -= 10;
+                if (e.key === "ArrowRight") player.x += 10;
+
+                // Zabezpečiť, aby hráč nevychádzal mimo plátna
+                player.x = Math.max(0, Math.min(canvas.width - player.width, player.x));
+                player.y = Math.max(0, Math.min(canvas.height - player.height, player.y));
+            });
+        }
+
+        movePlayer();
+
+        // Posielanie dát do Firebase
+        function sendData() {
+            const playerRef = ref(positionDb, `players/${player.id}`);
+            set(playerRef, {
+                x: player.x,
+                y: player.y,
+            });
+        }
+
+        // Načítanie a synchronizácia ostatných hráčov
+        onValue(ref(positionDb, "players"), (snapshot) => {
+            const data = snapshot.val();
+            if (data) {
+                Object.keys(data).forEach((id) => {
+                    if (id !== userId) {
+                        if (!players[id]) {
+                            players[id] = { ...data[id], videoElement: document.createElement("video") };
+                            players[id].videoElement.dataset.id = id;
+                            players[id].videoElement.autoplay = true;
+                            players[id].videoElement.style.position = "absolute";
+                            document.body.appendChild(players[id].videoElement);
+                        } else {
+                            players[id].x = data[id].x;
+                            players[id].y = data[id].y;
+                        }
+                        players[id].videoElement.style.left = `${players[id].x}px`;
+                        players[id].videoElement.style.top = `${players[id].y}px`;
+                    }
                 });
             }
-
-            if (answer) peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
-
-            if (candidate) peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
         });
-    });
 
-    const update = () => {
-        movePlayer();
-        set(positionRef, player);
-        requestAnimationFrame(update);
-    };
+        // Odstránenie hráča pri odpojení
+        window.addEventListener("beforeunload", () => {
+            const playerRef = ref(positionDb, `players/${userId}`);
+            remove(playerRef);
+        });
 
-    update();
+        // Aktualizácia hry
+        function update() {
+            sendData();
+            requestAnimationFrame(update);
+        }
+
+        update();
     </script>
 </body>
 </html>
