@@ -1,182 +1,210 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Interaktívny Video Meeting</title>
-  <style>
-    body {
-      margin: 0;
-      overflow: hidden;
-    }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interaktívny Video Meeting</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
 
-    canvas {
-      display: block;
-      background: lightblue;
-    }
+        canvas {
+            background: lightblue;
+            display: block;
+        }
 
-    video {
-      position: absolute;
-      border: 2px solid #fff;
-      border-radius: 5px;
-      width: 100px;
-      height: 75px;
-      object-fit: cover;
-    }
+        #videos {
+            display: none;
+        }
 
-    .controls {
-      position: absolute;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      justify-content: center;
-      gap: 10px;
-    }
+        video {
+            border: 2px solid #ccc;
+            border-radius: 10px;
+            width: 50px;
+            height: 50px;
+            object-fit: cover;
+        }
 
-    .button {
-      width: 60px;
-      height: 60px;
-      background: gray;
-      color: white;
-      font-size: 20px;
-      font-weight: bold;
-      text-align: center;
-      line-height: 60px;
-      border-radius: 10px;
-      user-select: none;
-      cursor: pointer;
-    }
+        .controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+        }
 
-    .button:active {
-      background: darkgray;
-    }
-  </style>
+        .button {
+            width: 60px;
+            height: 60px;
+            background: gray;
+            color: white;
+            font-size: 20px;
+            font-weight: bold;
+            text-align: center;
+            line-height: 60px;
+            border-radius: 10px;
+            cursor: pointer;
+        }
+
+        .button:active {
+            background: darkgray;
+        }
+    </style>
 </head>
 <body>
 <canvas id="gameCanvas"></canvas>
+<div id="videos"></div>
 <div class="controls">
-  <div class="button" id="left">◀</div>
-  <div class="button" id="jump">⤒</div>
-  <div class="button" id="right">▶</div>
+    <div class="button" id="left">◀</div>
+    <div class="button" id="up">⤒</div>
+    <div class="button" id="right">▶</div>
 </div>
 
 <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-  import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+    import { getDatabase, ref, set, onValue, remove, push } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-  const firebaseConfigGame = {
-    apiKey: "AIzaSyACWLI7L0zhZk7RFQyEXlOyQjtMPF-MgDw",
-    authDomain: "hrav-1a742.firebaseapp.com",
-    databaseURL: "https://hrav-1a742-default-rtdb.europe-west1.firebasedatabase.app",
-    projectId: "hrav-1a742",
-    storageBucket: "hrav-1a742.firebasestorage.app",
-    messagingSenderId: "1093772001619",
-    appId: "1:1093772001619:web:97d8e6dd9d5cd28da761a6",
-    measurementId: "G-GFVZ6ZD5RE"
-  };
+    const configGame = {
+        apiKey: "AIzaSyACWLI7L0zhZk7RFQyEXlOyQjtMPF-MgDw",
+        authDomain: "hrav-1a742.firebaseapp.com",
+        databaseURL: "https://hrav-1a742-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "hrav-1a742",
+        storageBucket: "hrav-1a742.firebasestorage.app",
+        messagingSenderId: "1093772001619",
+        appId: "1:1093772001619:web:97d8e6dd9d5cd28da761a6",
+        measurementId: "G-GFVZ6ZD5RE"
+    };
 
-  const appGame = initializeApp(firebaseConfigGame);
-  const dbGame = getDatabase(appGame);
+    const configVideo = {
+        apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
+        authDomain: "videjo-d0996.firebaseapp.com",
+        databaseURL: "https://videjo-d0996-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "videjo-d0996",
+        storageBucket: "videjo-d0996.firebasestorage.app",
+        messagingSenderId: "175126755237",
+        appId: "1:175126755237:web:8cf31d7a4d08f9fb2bda4c",
+        measurementId: "G-6Q2BJX1FE5"
+    };
 
-  const canvas = document.getElementById("gameCanvas");
-  const ctx = canvas.getContext("2d");
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+    const appGame = initializeApp(configGame, "game");
+    const dbGame = getDatabase(appGame);
 
-  const userId = `player_${Math.random().toString(36).substring(2, 9)}`;
-  const players = {};
-  const videoElements = {}; // Ukladá video elementy hráčov
+    const appVideo = initializeApp(configVideo, "video");
+    const dbVideo = getDatabase(appVideo);
 
-  const player = {
-    id: userId,
-    x: Math.random() * canvas.width,
-    y: Math.random() * canvas.height,
-    dx: 0,
-    dy: 0,
-    width: 100,
-    height: 75
-  };
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
 
-  const videoElement = document.createElement("video");
-  videoElement.autoplay = true;
-  videoElement.muted = true;
-  videoElement.style.left = `${player.x}px`;
-  videoElement.style.top = `${player.y}px`;
-  document.body.appendChild(videoElement);
+    const playerId = `player_${Math.random().toString(36).substring(2, 9)}`;
+    const players = {};
 
-  const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-  videoElement.srcObject = stream;
+    const player = {
+        id: playerId,
+        x: Math.random() * canvas.width,
+        y: canvas.height - 100,
+        width: 50,
+        height: 50,
+        color: 'blue',
+        dx: 0,
+        dy: 0,
+        isJumping: false,
+        grounded: true
+    };
 
-  const controls = {
-    left: document.getElementById("left"),
-    right: document.getElementById("right"),
-    jump: document.getElementById("jump")
-  };
+    const peers = {};
+    const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    const videosContainer = document.getElementById("videos");
 
-  controls.left.addEventListener("mousedown", () => (player.dx = -5));
-  controls.right.addEventListener("mousedown", () => (player.dx = 5));
-  controls.jump.addEventListener("mousedown", () => {
-    if (player.dy === 0) player.dy = -10;
-  });
-
-  controls.left.addEventListener("mouseup", () => (player.dx = 0));
-  controls.right.addEventListener("mouseup", () => (player.dx = 0));
-
-  const updatePlayerPosition = () => {
-    player.x += player.dx;
-    player.y += player.dy;
-    player.dy += 0.5; // Gravity
-
-    if (player.y + player.height > canvas.height) {
-      player.y = canvas.height - player.height;
-      player.dy = 0;
+    function addVideo(id, stream) {
+        const video = document.createElement("video");
+        video.srcObject = stream;
+        video.autoplay = true;
+        video.muted = id === playerId;
+        video.style.position = "absolute";
+        videosContainer.appendChild(video);
+        players[id].video = video;
     }
 
-    if (player.x < 0) player.x = 0;
-    if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+    function updateVideoPositions() {
+        for (const id in players) {
+            if (players[id].video) {
+                const { x, y, width, height } = players[id];
+                players[id].video.style.left = `${x}px`;
+                players[id].video.style.top = `${y}px`;
+            }
+        }
+    }
 
-    videoElement.style.left = `${player.x}px`;
-    videoElement.style.top = `${player.y}px`;
+    function movePlayer() {
+        player.x += player.dx;
+        if (!player.grounded) player.dy += 0.8;
+        player.y += player.dy;
 
-    set(ref(dbGame, `players/${userId}`), player);
-  };
-
-  const drawPlayers = () => {
-    Object.values(players).forEach((p) => {
-      if (p.id !== userId) {
-        if (!videoElements[p.id]) {
-          // Vytvor nové video pre ostatných hráčov
-          const otherVideo = document.createElement("video");
-          otherVideo.autoplay = true;
-          otherVideo.style.position = "absolute";
-          otherVideo.style.width = "100px";
-          otherVideo.style.height = "75px";
-          otherVideo.style.border = "2px solid #fff";
-          otherVideo.style.borderRadius = "5px";
-          otherVideo.dataset.id = p.id;
-          document.body.appendChild(otherVideo);
-          videoElements[p.id] = otherVideo;
+        if (player.y + player.height >= canvas.height) {
+            player.y = canvas.height - player.height;
+            player.dy = 0;
+            player.grounded = true;
         }
 
-        const otherVideo = videoElements[p.id];
-        otherVideo.style.left = `${p.x}px`;
-        otherVideo.style.top = `${p.y}px`;
-      }
+        if (player.x < 0) player.x = 0;
+        if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+    }
+
+    function drawPlayers() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        for (const id in players) {
+            const p = players[id];
+            ctx.fillStyle = p.color;
+            ctx.fillRect(p.x, p.y, p.width, p.height);
+        }
+    }
+
+    const leftButton = document.getElementById("left");
+    const rightButton = document.getElementById("right");
+    const upButton = document.getElementById("up");
+
+    leftButton.addEventListener("mousedown", () => player.dx = -5);
+    rightButton.addEventListener("mousedown", () => player.dx = 5);
+    upButton.addEventListener("mousedown", () => {
+        if (player.grounded) {
+            player.dy = -15;
+            player.grounded = false;
+        }
     });
-  };
 
-  onValue(ref(dbGame, "players"), (snapshot) => {
-    Object.assign(players, snapshot.val());
-    drawPlayers();
-  });
+    leftButton.addEventListener("mouseup", () => player.dx = 0);
+    rightButton.addEventListener("mouseup", () => player.dx = 0);
 
-  const update = () => {
-    updatePlayerPosition();
-    requestAnimationFrame(update);
-  };
+    const playersRef = ref(dbGame, "players");
+    onValue(playersRef, snapshot => {
+        const data = snapshot.val() || {};
+        for (const id in data) {
+            if (!players[id]) {
+                players[id] = { ...data[id] };
+                addVideo(id, localStream);
+            } else {
+                players[id] = { ...data[id] };
+            }
+        }
+        updateVideoPositions();
+        drawPlayers();
+    });
 
-  update();
+    function updateGame() {
+        movePlayer();
+        set(ref(dbGame, `players/${playerId}`), player);
+        requestAnimationFrame(updateGame);
+    }
+
+    updateGame();
 </script>
 </body>
 </html>
