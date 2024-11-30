@@ -67,140 +67,136 @@
     canvas.height = window.innerHeight;
 
     const playerId = `player_${Math.random().toString(36).substring(2, 9)}`;
-    const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-
-    const player = {
-        id: playerId,
-        x: Math.random() * (canvas.width - 150),
-        y: Math.random() * (canvas.height - 100),
-        width: 150,
-        height: 100,
-        videoElement: null
-    };
-
     const players = {};
 
-    const addPlayerVideo = (player) => {
-        const video = document.createElement('video');
-        video.srcObject = player.id === playerId ? localStream : null;
+    // WebRTC nastavenie
+    const config = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+    const peers = {};
+    const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+
+    // Pridať video na obrazovku
+    const addVideoStream = (id, stream) => {
+        if (players[id] && players[id].videoElement) return;
+        const video = document.createElement("video");
+        video.srcObject = stream;
         video.autoplay = true;
-        video.muted = player.id === playerId;
-        video.style.left = `${player.x}px`;
-        video.style.top = `${player.y}px`;
-        video.setAttribute("data-id", player.id);
+        video.muted = id === playerId;
+        video.style.position = "absolute";
+        video.style.left = `${Math.random() * (canvas.width - 150)}px`;
+        video.style.top = `${Math.random() * (canvas.height - 100)}px`;
+        video.dataset.id = id;
         document.body.appendChild(video);
-        player.videoElement = video;
+
+        players[id] = {
+            videoElement: video,
+            x: parseInt(video.style.left),
+            y: parseInt(video.style.top)
+        };
     };
 
-    const updatePlayerPosition = (player) => {
-        if (player.videoElement) {
-            player.videoElement.style.left = `${player.x}px`;
-            player.videoElement.style.top = `${player.y}px`;
-        }
-    };
+    addVideoStream(playerId, localStream);
 
+    // Odoslať dáta hráča do Firebase
     const sendPlayerData = () => {
         set(ref(dbGame, `players/${playerId}`), {
-            id: player.id,
-            x: player.x,
-            y: player.y
+            id: playerId,
+            x: players[playerId].x,
+            y: players[playerId].y
         });
     };
 
-    const removePlayer = () => {
-        const playerRef = ref(dbGame, `players/${playerId}`);
-        remove(playerRef);
-    };
-
-    window.addEventListener('beforeunload', removePlayer);
-
+    // Aktualizovať pozície hráčov
     onValue(ref(dbGame, "players"), (snapshot) => {
         const data = snapshot.val() || {};
         Object.keys(data).forEach(id => {
-            if (id === playerId) return;
-            if (!players[id]) {
-                players[id] = { ...data[id] };
-                addPlayerVideo(players[id]);
-            } else {
-                players[id].x = data[id].x;
-                players[id].y = data[id].y;
-                updatePlayerPosition(players[id]);
-            }
-        });
-
-        Object.keys(players).forEach(id => {
-            if (!data[id]) {
-                document.querySelector(`[data-id="${id}"]`).remove();
-                delete players[id];
+            if (id !== playerId && !players[id]) {
+                players[id] = data[id];
+                players[id].videoElement = null;
             }
         });
     });
 
-    window.addEventListener('keydown', (e) => {
-        const speed = 10;
-        switch (e.key) {
-            case "ArrowLeft":
-                player.x -= speed;
-                break;
-            case "ArrowRight":
-                player.x += speed;
-                break;
-            case "ArrowUp":
-                player.y -= speed;
-                break;
-            case "ArrowDown":
-                player.y += speed;
-                break;
-        }
+    // WebRTC pripojenia
+    const connectToNewUser = (id) => {
+        const peer = new RTCPeerConnection(config);
+        peers[id] = peer;
 
-        updatePlayerPosition(player);
-        sendPlayerData();
-    });
-
-    addPlayerVideo(player);
-    sendPlayerData();
-
-    // WebRTC video meeting logic
-    const config = {
-        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
-    };
-
-    const peers = {};
-    const signalsRef = ref(dbVideo, "signals");
-
-    const createPeerConnection = (id, stream) => {
-        const peerConnection = new RTCPeerConnection(config);
-        stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
-        peerConnection.ontrack = (event) => {
-            const [remoteStream] = event.streams;
-            if (players[id]) players[id].videoElement.srcObject = remoteStream;
+        localStream.getTracks().forEach(track => peer.addTrack(track, localStream));
+        peer.onicecandidate = (event) => {
+            if (event.candidate) {
+                push(ref(dbVideo, `signals/${id}`), {
+                    from: playerId,
+                    candidate: event.candidate
+                });
+            }
         };
 
-        return peerConnection;
+        peer.ontrack = (event) => {
+            const [remoteStream] = event.streams;
+            addVideoStream(id, remoteStream);
+        };
+
+        peer.createOffer().then((offer) => {
+            peer.setLocalDescription(offer);
+            push(ref(dbVideo, `signals/${id}`), {
+                from: playerId,
+                offer: offer
+            });
+        });
     };
 
-    onValue(signalsRef, (snapshot) => {
+    // Príjem signálov z Firebase
+    onValue(ref(dbVideo, `signals/${playerId}`), (snapshot) => {
         const signals = snapshot.val() || {};
         Object.keys(signals).forEach(key => {
-            const { from, offer, candidate } = signals[key];
+            const { from, offer, answer, candidate } = signals[key];
             if (from === playerId) return;
 
-            if (!peers[from]) {
-                peers[from] = createPeerConnection(from, localStream);
+            if (!peers[from]) connectToNewUser(from);
+
+            const peer = peers[from];
+            if (offer) {
+                peer.setRemoteDescription(new RTCSessionDescription(offer)).then(() => {
+                    peer.createAnswer().then((answer) => {
+                        peer.setLocalDescription(answer);
+                        push(ref(dbVideo, `signals/${from}`), {
+                            from: playerId,
+                            answer: answer
+                        });
+                    });
+                });
             }
 
-            if (offer) {
-                peers[from].setRemoteDescription(new RTCSessionDescription(offer))
-                    .then(() => peers[from].createAnswer())
-                    .then(answer => peers[from].setLocalDescription(answer))
-                    .then(() => push(signalsRef, { from: playerId, answer: peers[from].localDescription }));
+            if (answer) {
+                peer.setRemoteDescription(new RTCSessionDescription(answer));
             }
 
             if (candidate) {
-                peers[from].addIceCandidate(new RTCIceCandidate(candidate));
+                peer.addIceCandidate(new RTCIceCandidate(candidate));
             }
         });
     });
+
+    window.addEventListener("beforeunload", () => {
+        remove(ref(dbGame, `players/${playerId}`));
+        remove(ref(dbVideo, `signals/${playerId}`));
+    });
+
+    // Ovládanie pohybu
+    window.addEventListener("keydown", (e) => {
+        const speed = 10;
+        switch (e.key) {
+            case "ArrowUp": players[playerId].y -= speed; break;
+            case "ArrowDown": players[playerId].y += speed; break;
+            case "ArrowLeft": players[playerId].x -= speed; break;
+            case "ArrowRight": players[playerId].x += speed; break;
+        }
+        players[playerId].videoElement.style.top = `${players[playerId].y}px`;
+        players[playerId].videoElement.style.left = `${players[playerId].x}px`;
+        sendPlayerData();
+    });
+
+    sendPlayerData();
 </script>
 </body>
 </html>
