@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Multiplayer Video Game</title>
+    <title>Camera Player Game</title>
     <style>
         body {
             margin: 0;
@@ -15,128 +15,179 @@
             background: lightblue;
         }
 
-        video {
+        .controls {
             position: absolute;
-            width: 100px;
-            height: 75px;
-            border: 2px solid white;
-            border-radius: 5px;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .button {
+            width: 60px;
+            height: 60px;
+            background: gray;
+            color: white;
+            font-size: 20px;
+            font-weight: bold;
+            text-align: center;
+            line-height: 60px;
+            border-radius: 10px;
+            user-select: none;
+            cursor: pointer;
+        }
+
+        .button:active {
+            background: darkgray;
         }
     </style>
 </head>
 <body>
-    <canvas id="gameCanvas"></canvas>
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-        import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+<canvas id="gameCanvas"></canvas>
+<div class="controls">
+    <div class="button" id="left">◀</div>
+    <div class="button" id="jump">⤒</div>
+    <div class="button" id="right">▶</div>
+</div>
 
-        // Firebase configurations
-        const positionConfig = {
-            apiKey: "AIzaSyACWLI7L0zhZk7RFQyEXlOyQjtMPF-MgDw",
-            authDomain: "hrav-1a742.firebaseapp.com",
-            databaseURL: "https://hrav-1a742-default-rtdb.europe-west1.firebasedatabase.app",
-            projectId: "hrav-1a742",
-        };
-        const videoConfig = {
-            apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
-            authDomain: "videjo-d0996.firebaseapp.com",
-            databaseURL: "https://videjo-d0996-default-rtdb.europe-west1.firebasedatabase.app",
-            projectId: "videjo-d0996",
-        };
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+    import { getDatabase, ref, set, onValue, remove, push } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-        // Initialize Firebase apps
-        const positionApp = initializeApp(positionConfig, "positionApp");
-        const videoApp = initializeApp(videoConfig, "videoApp");
+    // Firebase configurations
+    const locationFirebaseConfig = {
+        apiKey: "AIzaSyACWLI7L0zhZk7RFQyEXlOyQjtMPF-MgDw",
+        authDomain: "hrav-1a742.firebaseapp.com",
+        databaseURL: "https://hrav-1a742-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "hrav-1a742",
+        storageBucket: "hrav-1a742.firebaseapp.com",
+        messagingSenderId: "1093772001619",
+        appId: "1:1093772001619:web:97d8e6dd9d5cd28da761a6",
+        measurementId: "G-GFVZ6ZD5RE"
+    };
 
-        const positionDb = getDatabase(positionApp);
-        const videoDb = getDatabase(videoApp);
+    const videoFirebaseConfig = {
+        apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
+        authDomain: "videjo-d0996.firebaseapp.com",
+        databaseURL: "https://videjo-d0996-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "videjo-d0996",
+        storageBucket: "videjo-d0996.firebaseapp.com",
+        messagingSenderId: "175126755237",
+        appId: "1:175126755237:web:8cf31d7a4d08f9fb2bda4c",
+        measurementId: "G-6Q2BJX1FE5"
+    };
 
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
+    const locationApp = initializeApp(locationFirebaseConfig, "locationApp");
+    const videoApp = initializeApp(videoFirebaseConfig, "videoApp");
 
-        const userId = `player_${Math.random().toString(36).substring(2, 9)}`;
-        const players = {};
+    const locationDb = getDatabase(locationApp);
+    const videoDb = getDatabase(videoApp);
 
-        // Local player object
-        const localPlayer = {
-            id: userId,
-            x: Math.random() * (canvas.width - 100),
-            y: Math.random() * (canvas.height - 100),
-            width: 100,
-            height: 75,
-        };
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
 
-        // Video setup
-        const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        const localVideo = document.createElement('video');
-        localVideo.srcObject = localStream;
-        localVideo.autoplay = true;
-        localVideo.muted = true;
-        document.body.appendChild(localVideo);
+    const userId = `user_${Math.random().toString(36).substring(2, 9)}`;
 
-        function updateVideoPosition() {
-            localVideo.style.left = `${localPlayer.x}px`;
-            localVideo.style.top = `${localPlayer.y}px`;
+    const player = {
+        id: userId,
+        x: Math.random() * canvas.width,
+        y: canvas.height - 150,
+        width: 100,
+        height: 100,
+        dx: 0,
+        dy: 0,
+        isJumping: false,
+        grounded: true
+    };
+
+    const players = {};
+    const videoStreams = {};
+
+    // Initialize local stream
+    const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    const localVideo = document.createElement("video");
+    localVideo.srcObject = localStream;
+    localVideo.autoplay = true;
+    localVideo.muted = true;
+
+    const addVideoToCanvas = (stream, x, y, width, height) => {
+        const video = document.createElement("video");
+        video.srcObject = stream;
+        video.autoplay = true;
+        video.width = width;
+        video.height = height;
+        ctx.drawImage(video, x, y, width, height);
+    };
+
+    // Movement functions
+    function movePlayer() {
+        player.x += player.dx;
+        if (!player.grounded) {
+            player.dy += 0.8;
+            player.y += player.dy;
         }
-
-        updateVideoPosition();
-
-        // Control movement
-        window.addEventListener('keydown', (event) => {
-            if (event.key === 'ArrowUp') localPlayer.y -= 10;
-            if (event.key === 'ArrowDown') localPlayer.y += 10;
-            if (event.key === 'ArrowLeft') localPlayer.x -= 10;
-            if (event.key === 'ArrowRight') localPlayer.x += 10;
-            sendPosition();
-            updateVideoPosition();
-        });
-
-        // Send local position to Firebase
-        function sendPosition() {
-            set(ref(positionDb, `players/${userId}`), localPlayer);
+        if (player.y + player.height >= canvas.height) {
+            player.y = canvas.height - player.height;
+            player.dy = 0;
+            player.grounded = true;
+            player.isJumping = false;
         }
+        if (player.x < 0) player.x = 0;
+        if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+    }
 
-        // Remove player on disconnect
-        window.addEventListener('beforeunload', () => {
-            remove(ref(positionDb, `players/${userId}`));
+    const drawPlayers = () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        Object.values(players).forEach(p => {
+            const stream = videoStreams[p.id];
+            if (stream) addVideoToCanvas(stream, p.x, p.y, p.width, p.height);
         });
+    };
 
-        // Listen for other players' positions
-        onValue(ref(positionDb, 'players'), (snapshot) => {
-            const data = snapshot.val() || {};
-            Object.keys(data).forEach((id) => {
-                if (id !== userId) {
-                    if (!players[id]) {
-                        const video = document.createElement('video');
-                        video.autoplay = true;
-                        video.dataset.userId = id;
-                        document.body.appendChild(video);
-                        players[id] = { ...data[id], video };
-                    }
-                    players[id].x = data[id].x;
-                    players[id].y = data[id].y;
-                    players[id].video.style.left = `${data[id].x}px`;
-                    players[id].video.style.top = `${data[id].y}px`;
-                }
-            });
+    // Handle buttons
+    document.getElementById('left').addEventListener('mousedown', () => player.dx = -5);
+    document.getElementById('right').addEventListener('mousedown', () => player.dx = 5);
+    document.getElementById('jump').addEventListener('mousedown', () => {
+        if (player.grounded) {
+            player.dy = -15;
+            player.grounded = false;
+            player.isJumping = true;
+        }
+    });
+
+    document.getElementById('left').addEventListener('mouseup', () => player.dx = 0);
+    document.getElementById('right').addEventListener('mouseup', () => player.dx = 0);
+
+    // Firebase updates
+    const updateFirebase = () => {
+        const playerRef = ref(locationDb, `players/${player.id}`);
+        set(playerRef, player);
+    };
+
+    const playersRef = ref(locationDb, "players");
+    onValue(playersRef, (snapshot) => {
+        const data = snapshot.val() || {};
+        Object.keys(data).forEach(id => {
+            players[id] = data[id];
         });
+    });
 
-        // Handle remote streams
-        onValue(ref(videoDb, 'users'), (snapshot) => {
-            const users = snapshot.val() || {};
-            Object.keys(users).forEach((id) => {
-                if (id !== userId && players[id] && !players[id].video.srcObject) {
-                    navigator.mediaDevices.getUserMedia({ video: true }).then((stream) => {
-                        players[id].video.srcObject = stream;
-                    });
-                }
-            });
-        });
+    const videosRef = ref(videoDb, "videos");
+    set(ref(videoDb, `videos/${userId}`), { userId });
 
-        // Send local user info to video database
-        set(ref(videoDb, `users/${userId}`), { id: userId });
-    </script>
+    // Game loop
+    const gameLoop = () => {
+        movePlayer();
+        drawPlayers();
+        updateFirebase();
+        requestAnimationFrame(gameLoop);
+    };
+
+    gameLoop();
+</script>
 </body>
 </html>
