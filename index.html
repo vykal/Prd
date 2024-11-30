@@ -21,7 +21,6 @@
             left: 50%;
             transform: translateX(-50%);
             display: flex;
-            justify-content: center;
             gap: 10px;
         }
 
@@ -42,14 +41,6 @@
         .button:active {
             background: darkgray;
         }
-
-        video {
-            position: absolute;
-            width: 100px;
-            height: 100px;
-            border: 2px solid black;
-            border-radius: 10px;
-        }
     </style>
 </head>
 <body>
@@ -61,12 +52,12 @@
 </div>
 
 <script type="module">
-    // Import Firebase SDKs
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-    import { getDatabase, ref, set, onValue, remove, push } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    import { initializeApp as initializeAppPositions } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+    import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    import { initializeApp as initializeAppVideo } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+    import { push } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-    // Firebase configurations
-    const gameConfig = {
+    const positionConfig = {
         apiKey: "AIzaSyACWLI7L0zhZk7RFQyEXlOyQjtMPF-MgDw",
         authDomain: "hrav-1a742.firebaseapp.com",
         databaseURL: "https://hrav-1a742-default-rtdb.europe-west1.firebasedatabase.app",
@@ -88,25 +79,22 @@
         measurementId: "G-6Q2BJX1FE5"
     };
 
-    // Initialize Firebase
-    const gameApp = initializeApp(gameConfig, "gameApp");
-    const videoApp = initializeApp(videoConfig, "videoApp");
-    const gameDb = getDatabase(gameApp);
-    const videoDb = getDatabase(videoApp);
+    const appPositions = initializeAppPositions(positionConfig);
+    const dbPositions = getDatabase(appPositions);
+    const appVideo = initializeAppVideo(videoConfig);
+    const dbVideo = getDatabase(appVideo);
 
-    // WebRTC Configuration
-    const config = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
-    const peers = {};
-    const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-
-    // Canvas setup
-    const canvas = document.getElementById('gameCanvas');
-    const ctx = canvas.getContext('2d');
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
 
-    // Generate unique ID
     const playerId = `player_${Math.random().toString(36).substring(2, 9)}`;
+    const players = {};
+
+    const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    const videoElements = {};
+
     const player = {
         id: playerId,
         x: Math.random() * (canvas.width - 100),
@@ -119,107 +107,83 @@
         grounded: true
     };
 
-    const players = {};
+    async function setupLocalStream() {
+        const video = document.createElement("video");
+        video.srcObject = localStream;
+        video.autoplay = true;
+        video.muted = true;
+        videoElements[playerId] = video;
+    }
 
-    // Controls setup
-    const leftButton = document.getElementById('left');
-    const rightButton = document.getElementById('right');
-    const jumpButton = document.getElementById('jump');
+    setupLocalStream();
 
-    leftButton.addEventListener('mousedown', () => player.dx = -5);
-    rightButton.addEventListener('mousedown', () => player.dx = 5);
-    jumpButton.addEventListener('mousedown', () => {
-        if (player.grounded) {
-            player.dy = -15;
-            player.grounded = false;
-        }
-    });
-
-    leftButton.addEventListener('mouseup', () => player.dx = 0);
-    rightButton.addEventListener('mouseup', () => player.dx = 0);
-
-    // Player movement
     function movePlayer() {
         player.x += player.dx;
-        if (!player.grounded) player.dy += 0.8;
-        player.y += player.dy;
+
+        if (!player.grounded) {
+            player.dy += 0.8;
+            player.y += player.dy;
+        }
 
         if (player.y + player.height >= canvas.height) {
             player.y = canvas.height - player.height;
             player.dy = 0;
             player.grounded = true;
+            player.isJumping = false;
         }
 
         if (player.x < 0) player.x = 0;
         if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
     }
 
-    // Sync position with Firebase
-    const gameRef = ref(gameDb, `players/${playerId}`);
-    set(gameRef, player);
-    window.addEventListener('beforeunload', () => remove(gameRef));
-
-    onValue(ref(gameDb, 'players'), snapshot => {
-        const data = snapshot.val() || {};
-        Object.keys(data).forEach(id => players[id] = data[id]);
-        drawPlayers();
-    });
-
     function drawPlayers() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        Object.values(players).forEach(p => {
-            if (p.id !== playerId) {
-                const video = document.querySelector(`video[data-id="${p.id}"]`);
-                if (video) {
-                    video.style.left = `${p.x}px`;
-                    video.style.top = `${p.y}px`;
-                }
+        Object.values(players).forEach((p) => {
+            const video = videoElements[p.id];
+            if (video) {
+                ctx.drawImage(video, p.x, p.y, p.width, p.height);
+            } else {
+                ctx.fillStyle = "gray";
+                ctx.fillRect(p.x, p.y, p.width, p.height);
             }
         });
     }
 
-    // Add video element
-    function addVideoStream(stream, id) {
-        const video = document.createElement('video');
-        video.srcObject = stream;
-        video.autoplay = true;
-        video.muted = id === playerId;
-        video.setAttribute('data-id', id);
-        document.body.appendChild(video);
-    }
+    const leftButton = document.getElementById("left");
+    const rightButton = document.getElementById("right");
+    const jumpButton = document.getElementById("jump");
 
-    addVideoStream(localStream, playerId);
+    leftButton.addEventListener("mousedown", () => player.dx = -5);
+    rightButton.addEventListener("mousedown", () => player.dx = 5);
+    jumpButton.addEventListener("mousedown", () => {
+        if (player.grounded) {
+            player.dy = -15;
+            player.grounded = false;
+            player.isJumping = true;
+        }
+    });
 
-    // WebRTC signaling
-    const signalRef = ref(videoDb, `signals/${playerId}`);
-    onValue(ref(videoDb, 'signals'), snapshot => {
-        const signals = snapshot.val() || {};
-        Object.keys(signals).forEach(from => {
-            if (from !== playerId && !peers[from]) {
-                connectToNewUser(from);
-            }
+    leftButton.addEventListener("mouseup", () => player.dx = 0);
+    rightButton.addEventListener("mouseup", () => player.dx = 0);
+
+    const playerRef = ref(dbPositions, `players/${playerId}`);
+    set(playerRef, player);
+
+    window.addEventListener("beforeunload", () => {
+        remove(playerRef);
+    });
+
+    onValue(ref(dbPositions, "players"), (snapshot) => {
+        const data = snapshot.val() || {};
+        Object.keys(data).forEach((id) => {
+            players[id] = data[id];
         });
     });
 
-    function connectToNewUser(id) {
-        const peer = new RTCPeerConnection(config);
-        localStream.getTracks().forEach(track => peer.addTrack(track, localStream));
-        peer.onicecandidate = event => {
-            if (event.candidate) {
-                push(ref(videoDb, `signals/${id}`), { from: playerId, candidate: event.candidate.toJSON() });
-            }
-        };
-        peer.ontrack = event => addVideoStream(event.streams[0], id);
-        peer.createOffer().then(offer => peer.setLocalDescription(offer)).then(() => {
-            push(ref(videoDb, `signals/${id}`), { from: playerId, offer: peer.localDescription });
-        });
-        peers[id] = peer;
-    }
-
-    // Game loop
-    function update() {
+    async function update() {
         movePlayer();
-        set(gameRef, player);
+        set(playerRef, player);
+        drawPlayers();
         requestAnimationFrame(update);
     }
 
