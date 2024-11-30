@@ -9,10 +9,21 @@
       margin: 0;
       overflow: hidden;
     }
+
     canvas {
       display: block;
       background: lightblue;
     }
+
+    video {
+      position: absolute;
+      border: 2px solid #fff;
+      border-radius: 5px;
+      width: 100px;
+      height: 75px;
+      object-fit: cover;
+    }
+
     .controls {
       position: absolute;
       bottom: 20px;
@@ -22,6 +33,7 @@
       justify-content: center;
       gap: 10px;
     }
+
     .button {
       width: 60px;
       height: 60px;
@@ -35,18 +47,138 @@
       user-select: none;
       cursor: pointer;
     }
+
     .button:active {
       background: darkgray;
     }
   </style>
 </head>
 <body>
-  <canvas id="gameCanvas"></canvas>
-  <div class="controls">
-    <div class="button" id="left">◀</div>
-    <div class="button" id="jump">⤒</div>
-    <div class="button" id="right">▶</div>
-  </div>
-  <script type="module" src="app.js"></script>
+<canvas id="gameCanvas"></canvas>
+<div class="controls">
+  <div class="button" id="left">◀</div>
+  <div class="button" id="jump">⤒</div>
+  <div class="button" id="right">▶</div>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+  import { getDatabase, ref, set, onValue, remove, push } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+
+  const firebaseConfigVideo = {
+    apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
+    authDomain: "videjo-d0996.firebaseapp.com",
+    databaseURL: "https://videjo-d0996-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "videjo-d0996",
+    storageBucket: "videjo-d0996.firebasestorage.app",
+    messagingSenderId: "175126755237",
+    appId: "1:175126755237:web:8cf31d7a4d08f9fb2bda4c",
+    measurementId: "G-6Q2BJX1FE5"
+  };
+
+  const firebaseConfigGame = {
+    apiKey: "AIzaSyACWLI7L0zhZk7RFQyEXlOyQjtMPF-MgDw",
+    authDomain: "hrav-1a742.firebaseapp.com",
+    databaseURL: "https://hrav-1a742-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "hrav-1a742",
+    storageBucket: "hrav-1a742.firebasestorage.app",
+    messagingSenderId: "1093772001619",
+    appId: "1:1093772001619:web:97d8e6dd9d5cd28da761a6",
+    measurementId: "G-GFVZ6ZD5RE"
+  };
+
+  const appVideo = initializeApp(firebaseConfigVideo, "videoApp");
+  const appGame = initializeApp(firebaseConfigGame, "gameApp");
+  const dbVideo = getDatabase(appVideo);
+  const dbGame = getDatabase(appGame);
+
+  const canvas = document.getElementById("gameCanvas");
+  const ctx = canvas.getContext("2d");
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+
+  const userId = `player_${Math.random().toString(36).substring(2, 9)}`;
+  const peers = {};
+  const players = {};
+
+  const player = {
+    id: userId,
+    x: Math.random() * canvas.width,
+    y: Math.random() * canvas.height,
+    dx: 0,
+    dy: 0,
+    width: 100,
+    height: 75
+  };
+
+  const videoElement = document.createElement("video");
+  videoElement.autoplay = true;
+  videoElement.muted = true;
+  videoElement.style.left = `${player.x}px`;
+  videoElement.style.top = `${player.y}px`;
+  document.body.appendChild(videoElement);
+
+  const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+  videoElement.srcObject = stream;
+
+  const controls = {
+    left: document.getElementById("left"),
+    right: document.getElementById("right"),
+    jump: document.getElementById("jump")
+  };
+
+  controls.left.addEventListener("mousedown", () => (player.dx = -5));
+  controls.right.addEventListener("mousedown", () => (player.dx = 5));
+  controls.jump.addEventListener("mousedown", () => {
+    if (player.dy === 0) player.dy = -10;
+  });
+
+  controls.left.addEventListener("mouseup", () => (player.dx = 0));
+  controls.right.addEventListener("mouseup", () => (player.dx = 0));
+
+  const updatePlayerPosition = () => {
+    player.x += player.dx;
+    player.y += player.dy;
+    player.dy += 0.5; // Gravity
+
+    if (player.y + player.height > canvas.height) {
+      player.y = canvas.height - player.height;
+      player.dy = 0;
+    }
+
+    if (player.x < 0) player.x = 0;
+    if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
+
+    videoElement.style.left = `${player.x}px`;
+    videoElement.style.top = `${player.y}px`;
+
+    set(ref(dbGame, `players/${userId}`), player);
+  };
+
+  const drawPlayers = () => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    Object.values(players).forEach((p) => {
+      if (p.id !== userId) {
+        const otherVideo = document.querySelector(`video[data-id="${p.id}"]`);
+        if (otherVideo) {
+          otherVideo.style.left = `${p.x}px`;
+          otherVideo.style.top = `${p.y}px`;
+        }
+      }
+    });
+  };
+
+  onValue(ref(dbGame, "players"), (snapshot) => {
+    Object.assign(players, snapshot.val());
+    drawPlayers();
+  });
+
+  const update = () => {
+    updatePlayerPosition();
+    requestAnimationFrame(update);
+  };
+
+  update();
+</script>
 </body>
 </html>
