@@ -67,23 +67,25 @@
 
   // Firebase konfigurácie
   const firebaseConfigRealtimeDB = {
-    apiKey: "API_KEY_1",
-    authDomain: "project-1.firebaseapp.com",
-    databaseURL: "https://project-1-default-rtdb.europe-west1.firebasedatabase.app",
-    projectId: "project-1",
-    storageBucket: "project-1.appspot.com",
-    messagingSenderId: "123456789",
-    appId: "1:123456789:web:example"
+    apiKey: "AIzaSyACWLI7L0zhZk7RFQyEXlOyQjtMPF-MgDw",
+    authDomain: "hrav-1a742.firebaseapp.com",
+    databaseURL: "https://hrav-1a742-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "hrav-1a742",
+    storageBucket: "hrav-1a742.firebaseapp.com",
+    messagingSenderId: "1093772001619",
+    appId: "1:1093772001619:web:97d8e6dd9d5cd28da761a6",
+    measurementId: "G-GFVZ6ZD5RE"
   };
 
   const firebaseConfigVideoDB = {
-    apiKey: "API_KEY_2",
-    authDomain: "project-2.firebaseapp.com",
-    databaseURL: "https://project-2-default-rtdb.europe-west1.firebasedatabase.app",
-    projectId: "project-2",
-    storageBucket: "project-2.appspot.com",
-    messagingSenderId: "987654321",
-    appId: "1:987654321:web:example"
+    apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
+    authDomain: "videjo-d0996.firebaseapp.com",
+    databaseURL: "https://videjo-d0996-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "videjo-d0996",
+    storageBucket: "videjo-d0996.firebaseapp.com",
+    messagingSenderId: "175126755237",
+    appId: "1:175126755237:web:8cf31d7a4d08f9fb2bda4c",
+    measurementId: "G-6Q2BJX1FE5"
   };
 
   const appRealtimeDB = initializeApp(firebaseConfigRealtimeDB, "realtime");
@@ -128,31 +130,26 @@
     });
   }
 
-  // Pohyb hráča
   function movePlayer() {
     player.x += player.dx;
     player.y += player.dy;
 
-    // Obmedzenia pohybu
     if (player.x < 0) player.x = 0;
     if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
     if (player.y < 0) player.y = 0;
     if (player.y + player.height > canvas.height) player.y = canvas.height - player.height;
   }
 
-  // Posielanie údajov o polohe hráča do Firebase
   function sendDataToFirebase() {
     const playerRef = ref(dbRealtime, `players/${player.id}`);
     set(playerRef, player);
   }
 
-  // Odstránenie hráča z Firebase pri odchode
   window.addEventListener("beforeunload", () => {
     const playerRef = ref(dbRealtime, `players/${player.id}`);
     remove(playerRef);
   });
 
-  // Načítanie údajov o ostatných hráčoch
   onValue(ref(dbRealtime, "players"), (snapshot) => {
     const data = snapshot.val() || {};
     Object.keys(data).forEach((id) => {
@@ -163,29 +160,6 @@
           video.dataset.id = id;
           video.autoplay = true;
           document.body.appendChild(video);
-
-          // Pripojenie k WebRTC streamu
-          const peerConnection = new RTCPeerConnection();
-          peerConnection.ontrack = (event) => {
-            video.srcObject = event.streams[0];
-          };
-
-          // SDP Signaling
-          onValue(ref(dbVideo, `signals/${id}`), (snapshot) => {
-            const signals = snapshot.val();
-            if (!signals) return;
-            signals.forEach((signal) => {
-              if (signal.offer) {
-                peerConnection.setRemoteDescription(new RTCSessionDescription(signal.offer))
-                  .then(() => peerConnection.createAnswer())
-                  .then((answer) => peerConnection.setLocalDescription(answer))
-                  .then(() => set(ref(dbVideo, `signals/${userId}`), { answer: peerConnection.localDescription }));
-              }
-              if (signal.candidate) {
-                peerConnection.addIceCandidate(new RTCIceCandidate(signal.candidate));
-              }
-            });
-          });
         }
       }
     });
@@ -193,7 +167,6 @@
     drawPlayers();
   });
 
-  // Ovládanie
   document.getElementById("left").addEventListener("mousedown", () => player.dx = -5);
   document.getElementById("right").addEventListener("mousedown", () => player.dx = 5);
   document.getElementById("up").addEventListener("mousedown", () => player.dy = -5);
@@ -201,7 +174,6 @@
   document.getElementById("right").addEventListener("mouseup", () => player.dx = 0);
   document.getElementById("up").addEventListener("mouseup", () => player.dy = 0);
 
-  // Aktualizácia hry
   function update() {
     movePlayer();
     sendDataToFirebase();
