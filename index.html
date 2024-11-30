@@ -54,7 +54,7 @@
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-    import { getDatabase, ref, set, onValue, remove, push } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+    import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
     // Firebase configurations
     const locationFirebaseConfig = {
@@ -109,17 +109,9 @@
 
     // Initialize local stream
     const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    const localVideo = document.createElement("video");
-    localVideo.srcObject = localStream;
-    localVideo.autoplay = true;
-    localVideo.muted = true;
+    videoStreams[userId] = localStream;
 
-    const addVideoToCanvas = (stream, x, y, width, height) => {
-        const video = document.createElement("video");
-        video.srcObject = stream;
-        video.autoplay = true;
-        video.width = width;
-        video.height = height;
+    const addVideoToCanvas = (video, x, y, width, height) => {
         ctx.drawImage(video, x, y, width, height);
     };
 
@@ -144,7 +136,14 @@
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         Object.values(players).forEach(p => {
             const stream = videoStreams[p.id];
-            if (stream) addVideoToCanvas(stream, p.x, p.y, p.width, p.height);
+            if (stream) {
+                const video = document.createElement("video");
+                video.srcObject = stream;
+                video.autoplay = true;
+                video.width = p.width;
+                video.height = p.height;
+                addVideoToCanvas(video, p.x, p.y, p.width, p.height);
+            }
         });
     };
 
