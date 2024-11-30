@@ -8,25 +8,22 @@
         body {
             margin: 0;
             overflow: hidden;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
         }
 
-        canvas {
+        #gameCanvas {
             background: lightblue;
             display: block;
-        }
-
-        #videos {
-            display: none;
+            position: absolute;
+            top: 0;
+            left: 0;
         }
 
         video {
-            border: 2px solid #ccc;
-            border-radius: 10px;
+            position: absolute;
             width: 50px;
             height: 50px;
+            border-radius: 10px;
+            border: 2px solid black;
             object-fit: cover;
         }
 
@@ -59,7 +56,6 @@
 </head>
 <body>
 <canvas id="gameCanvas"></canvas>
-<div id="videos"></div>
 <div class="controls">
     <div class="button" id="left">◀</div>
     <div class="button" id="up">⤒</div>
@@ -86,7 +82,7 @@
         authDomain: "videjo-d0996.firebaseapp.com",
         databaseURL: "https://videjo-d0996-default-rtdb.europe-west1.firebasedatabase.app",
         projectId: "videjo-d0996",
-        storageBucket: "videjo-d0996.firebasestorage.app",
+        storageBucket: "videjo-d0996.firebasedatabase.app",
         messagingSenderId: "175126755237",
         appId: "1:175126755237:web:8cf31d7a4d08f9fb2bda4c",
         measurementId: "G-6Q2BJX1FE5"
@@ -111,61 +107,49 @@
         x: Math.random() * canvas.width,
         y: canvas.height - 100,
         width: 50,
-        height: 50,
-        color: 'blue',
-        dx: 0,
-        dy: 0,
-        isJumping: false,
-        grounded: true
+        height: 50
     };
 
-    const peers = {};
     const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    const videosContainer = document.getElementById("videos");
+    const peers = {};
 
-    function addVideo(id, stream) {
+    const addVideoStream = (id, stream) => {
         const video = document.createElement("video");
         video.srcObject = stream;
         video.autoplay = true;
         video.muted = id === playerId;
-        video.style.position = "absolute";
-        videosContainer.appendChild(video);
+        video.dataset.id = id;
+        document.body.appendChild(video);
         players[id].video = video;
-    }
+    };
 
-    function updateVideoPositions() {
-        for (const id in players) {
-            if (players[id].video) {
-                const { x, y, width, height } = players[id];
-                players[id].video.style.left = `${x}px`;
-                players[id].video.style.top = `${y}px`;
-            }
-        }
-    }
+    addVideoStream(playerId, localStream);
 
-    function movePlayer() {
-        player.x += player.dx;
-        if (!player.grounded) player.dy += 0.8;
-        player.y += player.dy;
+    const movePlayer = () => {
+        player.x += player.dx || 0;
+        player.y += player.dy || 0;
 
         if (player.y + player.height >= canvas.height) {
             player.y = canvas.height - player.height;
             player.dy = 0;
-            player.grounded = true;
         }
 
         if (player.x < 0) player.x = 0;
         if (player.x + player.width > canvas.width) player.x = canvas.width - player.width;
-    }
 
-    function drawPlayers() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        players[playerId] = { ...player };
+        updatePositions();
+    };
+
+    const updatePositions = () => {
         for (const id in players) {
             const p = players[id];
-            ctx.fillStyle = p.color;
-            ctx.fillRect(p.x, p.y, p.width, p.height);
+            if (p.video) {
+                p.video.style.left = `${p.x}px`;
+                p.video.style.top = `${p.y}px`;
+            }
         }
-    }
+    };
 
     const leftButton = document.getElementById("left");
     const rightButton = document.getElementById("right");
@@ -173,36 +157,36 @@
 
     leftButton.addEventListener("mousedown", () => player.dx = -5);
     rightButton.addEventListener("mousedown", () => player.dx = 5);
-    upButton.addEventListener("mousedown", () => {
-        if (player.grounded) {
-            player.dy = -15;
-            player.grounded = false;
-        }
-    });
+    upButton.addEventListener("mousedown", () => player.dy = -5);
 
     leftButton.addEventListener("mouseup", () => player.dx = 0);
     rightButton.addEventListener("mouseup", () => player.dx = 0);
+    upButton.addEventListener("mouseup", () => player.dy = 0);
 
     const playersRef = ref(dbGame, "players");
-    onValue(playersRef, snapshot => {
+
+    onValue(playersRef, (snapshot) => {
         const data = snapshot.val() || {};
         for (const id in data) {
             if (!players[id]) {
-                players[id] = { ...data[id] };
-                addVideo(id, localStream);
+                players[id] = data[id];
+                addVideoStream(id, localStream);
             } else {
                 players[id] = { ...data[id] };
             }
         }
-        updateVideoPositions();
-        drawPlayers();
+        updatePositions();
     });
 
-    function updateGame() {
+    const updateGame = () => {
         movePlayer();
         set(ref(dbGame, `players/${playerId}`), player);
         requestAnimationFrame(updateGame);
-    }
+    };
+
+    window.addEventListener("beforeunload", () => {
+        remove(ref(dbGame, `players/${playerId}`));
+    });
 
     updateGame();
 </script>
