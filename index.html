@@ -8,143 +8,183 @@
         body {
             margin: 0;
             overflow: hidden;
-            font-family: Arial, sans-serif;
         }
+
         canvas {
             display: block;
             background: lightblue;
         }
+
         video {
             position: absolute;
-            border: 2px solid #fff;
+            border: 2px solid #ccc;
             border-radius: 10px;
-            width: 150px;
-            height: 100px;
+            width: 120px;
+            height: 90px;
             object-fit: cover;
+        }
+
+        .controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        .button {
+            width: 60px;
+            height: 60px;
+            background: gray;
+            color: white;
+            font-size: 20px;
+            font-weight: bold;
+            text-align: center;
+            line-height: 60px;
+            border-radius: 10px;
+            user-select: none;
+            cursor: pointer;
+        }
+
+        .button:active {
+            background: darkgray;
         }
     </style>
 </head>
 <body>
-    <canvas id="gameCanvas"></canvas>
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-        import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+<canvas id="gameCanvas"></canvas>
+<div class="controls">
+    <div class="button" id="left">◀</div>
+    <div class="button" id="up">⤒</div>
+    <div class="button" id="right">▶</div>
+</div>
 
-        // Firebase konfigurácia pre polohu
-        const positionConfig = {
-            apiKey: "AIzaSyACWLI7L0zhZk7RFQyEXlOyQjtMPF-MgDw",
-            authDomain: "hrav-1a742.firebaseapp.com",
-            databaseURL: "https://hrav-1a742-default-rtdb.europe-west1.firebasedatabase.app",
-            projectId: "hrav-1a742",
-            storageBucket: "hrav-1a742.appspot.com",
-            messagingSenderId: "1093772001619",
-            appId: "1:1093772001619:web:97d8e6dd9d5cd28da761a6",
-        };
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+    import { getDatabase, ref, set, onValue, remove, push } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-        // Firebase konfigurácia pre WebRTC
-        const videoConfig = {
-            apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
-            authDomain: "videjo-d0996.firebaseapp.com",
-            databaseURL: "https://videjo-d0996-default-rtdb.europe-west1.firebasedatabase.app",
-            projectId: "videjo-d0996",
-            storageBucket: "videjo-d0996.appspot.com",
-            messagingSenderId: "175126755237",
-            appId: "1:175126755237:web:8cf31d7a4d08f9fb2bda4c",
-        };
+    // Firebase configuration for game positions
+    const positionConfig = {
+        apiKey: "AIzaSyACWLI7L0zhZk7RFQyEXlOyQjtMPF-MgDw",
+        authDomain: "hrav-1a742.firebaseapp.com",
+        databaseURL: "https://hrav-1a742-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "hrav-1a742",
+        storageBucket: "hrav-1a742.firebasestorage.app",
+        messagingSenderId: "1093772001619",
+        appId: "1:1093772001619:web:97d8e6dd9d5cd28da761a6",
+        measurementId: "G-GFVZ6ZD5RE"
+    };
 
-        // Inicializácia Firebase
-        const positionApp = initializeApp(positionConfig, "positionApp");
-        const videoApp = initializeApp(videoConfig, "videoApp");
-        const positionDb = getDatabase(positionApp);
-        const videoDb = getDatabase(videoApp);
+    // Firebase configuration for video meeting
+    const videoConfig = {
+        apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
+        authDomain: "videjo-d0996.firebaseapp.com",
+        databaseURL: "https://videjo-d0996-default-rtdb.europe-west1.firebasedatabase.app",
+        projectId: "videjo-d0996",
+        storageBucket: "videjo-d0996.firebasestorage.app",
+        messagingSenderId: "175126755237",
+        appId: "1:175126755237:web:8cf31d7a4d08f9fb2bda4c",
+        measurementId: "G-6Q2BJX1FE5"
+    };
 
-        const canvas = document.getElementById("gameCanvas");
-        const ctx = canvas.getContext("2d");
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
+    const positionApp = initializeApp(positionConfig, "positionApp");
+    const videoApp = initializeApp(videoConfig, "videoApp");
 
-        const userId = `player_${Math.random().toString(36).substring(2, 9)}`;
-        const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    const positionDb = getDatabase(positionApp);
+    const videoDb = getDatabase(videoApp);
 
-        const player = {
-            id: userId,
-            x: Math.random() * (canvas.width - 150),
-            y: Math.random() * (canvas.height - 100),
-            width: 150,
-            height: 100,
-            videoElement: document.createElement("video"),
-        };
+    // Unique user ID
+    const userId = `player_${Math.random().toString(36).substring(2, 9)}`;
 
-        const players = {};
+    // Canvas setup
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
 
-        // Nastavenie lokálneho video streamu
-        player.videoElement.srcObject = localStream;
-        player.videoElement.autoplay = true;
-        player.videoElement.muted = true;
-        player.videoElement.dataset.id = userId;
-        document.body.appendChild(player.videoElement);
+    const player = {
+        id: userId,
+        x: Math.random() * (canvas.width - 120),
+        y: Math.random() * (canvas.height - 90),
+        width: 120,
+        height: 90,
+    };
 
-        // Pohyb hráča
-        function movePlayer() {
-            document.addEventListener("keydown", (e) => {
-                if (e.key === "ArrowUp") player.y -= 10;
-                if (e.key === "ArrowDown") player.y += 10;
-                if (e.key === "ArrowLeft") player.x -= 10;
-                if (e.key === "ArrowRight") player.x += 10;
+    const players = {};
 
-                // Zabezpečiť, aby hráč nevychádzal mimo plátna
-                player.x = Math.max(0, Math.min(canvas.width - player.width, player.x));
-                player.y = Math.max(0, Math.min(canvas.height - player.height, player.y));
-            });
-        }
+    const addVideoElement = async (stream, id) => {
+        const video = document.createElement("video");
+        video.id = id;
+        video.srcObject = stream;
+        video.autoplay = true;
+        video.muted = id === userId; // Mute own video
+        document.body.appendChild(video);
+    };
 
-        movePlayer();
+    const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    addVideoElement(localStream, userId);
 
-        // Posielanie dát do Firebase
-        function sendData() {
-            const playerRef = ref(positionDb, `players/${player.id}`);
-            set(playerRef, {
-                x: player.x,
-                y: player.y,
-            });
-        }
+    // Movement controls
+    const controls = {
+        left: document.getElementById('left'),
+        up: document.getElementById('up'),
+        right: document.getElementById('right'),
+    };
 
-        // Načítanie a synchronizácia ostatných hráčov
-        onValue(ref(positionDb, "players"), (snapshot) => {
-            const data = snapshot.val();
-            if (data) {
-                Object.keys(data).forEach((id) => {
-                    if (id !== userId) {
-                        if (!players[id]) {
-                            players[id] = { ...data[id], videoElement: document.createElement("video") };
-                            players[id].videoElement.dataset.id = id;
-                            players[id].videoElement.autoplay = true;
-                            players[id].videoElement.style.position = "absolute";
-                            document.body.appendChild(players[id].videoElement);
-                        } else {
-                            players[id].x = data[id].x;
-                            players[id].y = data[id].y;
-                        }
-                        players[id].videoElement.style.left = `${players[id].x}px`;
-                        players[id].videoElement.style.top = `${players[id].y}px`;
-                    }
-                });
+    controls.left.addEventListener('mousedown', () => (player.dx = -5));
+    controls.right.addEventListener('mousedown', () => (player.dx = 5));
+    controls.up.addEventListener('mousedown', () => (player.dy = -5));
+    controls.left.addEventListener('mouseup', () => (player.dx = 0));
+    controls.right.addEventListener('mouseup', () => (player.dx = 0));
+    controls.up.addEventListener('mouseup', () => (player.dy = 0));
+
+    // Save position to Firebase
+    function sendPositionToFirebase() {
+        set(ref(positionDb, `players/${player.id}`), player);
+    }
+
+    // Remove player on exit
+    window.addEventListener('beforeunload', () => {
+        remove(ref(positionDb, `players/${player.id}`));
+    });
+
+    // Listen for position updates
+    onValue(ref(positionDb, 'players'), (snapshot) => {
+        const data = snapshot.val() || {};
+        Object.keys(data).forEach((id) => {
+            if (!players[id]) {
+                const video = document.createElement('video');
+                video.id = id;
+                video.width = 120;
+                video.height = 90;
+                video.style.position = 'absolute';
+                document.body.appendChild(video);
+            }
+            players[id] = data[id];
+            const video = document.getElementById(id);
+            if (video) {
+                video.style.left = `${data[id].x}px`;
+                video.style.top = `${data[id].y}px`;
             }
         });
+    });
 
-        // Odstránenie hráča pri odpojení
-        window.addEventListener("beforeunload", () => {
-            const playerRef = ref(positionDb, `players/${userId}`);
-            remove(playerRef);
-        });
+    // Game loop
+    function update() {
+        player.x += player.dx || 0;
+        player.y += player.dy || 0;
 
-        // Aktualizácia hry
-        function update() {
-            sendData();
-            requestAnimationFrame(update);
-        }
+        // Keep within canvas boundaries
+        player.x = Math.max(0, Math.min(player.x, canvas.width - player.width));
+        player.y = Math.max(0, Math.min(player.y, canvas.height - player.height));
 
-        update();
-    </script>
+        sendPositionToFirebase();
+        requestAnimationFrame(update);
+    }
+
+    update();
+</script>
 </body>
 </html>
