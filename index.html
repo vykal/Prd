@@ -10,11 +10,6 @@
             overflow: hidden;
         }
 
-        canvas {
-            display: block;
-            background: lightblue;
-        }
-
         video {
             position: absolute;
             border: 2px solid #ccc;
@@ -54,7 +49,6 @@
     </style>
 </head>
 <body>
-<canvas id="gameCanvas"></canvas>
 <div class="controls">
     <div class="button" id="left">◀</div>
     <div class="button" id="up">⤒</div>
@@ -65,7 +59,6 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
     import { getDatabase, ref, set, onValue, remove, push } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
-    // Firebase configuration for game positions
     const positionConfig = {
         apiKey: "AIzaSyACWLI7L0zhZk7RFQyEXlOyQjtMPF-MgDw",
         authDomain: "hrav-1a742.firebaseapp.com",
@@ -77,7 +70,6 @@
         measurementId: "G-GFVZ6ZD5RE"
     };
 
-    // Firebase configuration for video meeting
     const videoConfig = {
         apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
         authDomain: "videjo-d0996.firebaseapp.com",
@@ -95,96 +87,131 @@
     const positionDb = getDatabase(positionApp);
     const videoDb = getDatabase(videoApp);
 
-    // Unique user ID
     const userId = `player_${Math.random().toString(36).substring(2, 9)}`;
-
-    // Canvas setup
-    const canvas = document.getElementById('gameCanvas');
-    const ctx = canvas.getContext('2d');
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    const peers = {};
+    const pendingCandidates = {};
+    const config = {
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+    };
 
     const player = {
         id: userId,
-        x: Math.random() * (canvas.width - 120),
-        y: Math.random() * (canvas.height - 90),
+        x: Math.random() * window.innerWidth - 120,
+        y: Math.random() * window.innerHeight - 90,
         width: 120,
         height: 90,
     };
 
-    const players = {};
-
-    const addVideoElement = async (stream, id) => {
-        const video = document.createElement("video");
-        video.id = id;
-        video.srcObject = stream;
-        video.autoplay = true;
-        video.muted = id === userId; // Mute own video
-        document.body.appendChild(video);
-    };
-
     const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    addVideoElement(localStream, userId);
+    const videoElement = document.createElement("video");
+    videoElement.id = userId;
+    videoElement.autoplay = true;
+    videoElement.muted = true;
+    videoElement.style.position = "absolute";
+    videoElement.style.left = `${player.x}px`;
+    videoElement.style.top = `${player.y}px`;
+    videoElement.srcObject = localStream;
+    document.body.appendChild(videoElement);
 
-    // Movement controls
-    const controls = {
-        left: document.getElementById('left'),
-        up: document.getElementById('up'),
-        right: document.getElementById('right'),
-    };
+    async function connectToNewUser(id) {
+        const peer = new RTCPeerConnection(config);
+        peers[id] = peer;
 
-    controls.left.addEventListener('mousedown', () => (player.dx = -5));
-    controls.right.addEventListener('mousedown', () => (player.dx = 5));
-    controls.up.addEventListener('mousedown', () => (player.dy = -5));
-    controls.left.addEventListener('mouseup', () => (player.dx = 0));
-    controls.right.addEventListener('mouseup', () => (player.dx = 0));
-    controls.up.addEventListener('mouseup', () => (player.dy = 0));
+        localStream.getTracks().forEach((track) => peer.addTrack(track, localStream));
 
-    // Save position to Firebase
-    function sendPositionToFirebase() {
-        set(ref(positionDb, `players/${player.id}`), player);
+        peer.onicecandidate = (event) => {
+            if (event.candidate) {
+                push(ref(videoDb, `signals/${id}`), {
+                    from: userId,
+                    candidate: event.candidate.toJSON(),
+                });
+            }
+        };
+
+        peer.ontrack = (event) => {
+            const [stream] = event.streams;
+            const remoteVideo = document.createElement("video");
+            remoteVideo.id = id;
+            remoteVideo.autoplay = true;
+            remoteVideo.style.position = "absolute";
+            document.body.appendChild(remoteVideo);
+            remoteVideo.srcObject = stream;
+        };
+
+        const offer = await peer.createOffer();
+        await peer.setLocalDescription(offer);
+        push(ref(videoDb, `signals/${id}`), { from: userId, offer });
     }
 
-    // Remove player on exit
-    window.addEventListener('beforeunload', () => {
-        remove(ref(positionDb, `players/${player.id}`));
-    });
+    onValue(ref(videoDb, "signals"), (snapshot) => {
+        const signals = snapshot.val();
+        if (!signals) return;
 
-    // Listen for position updates
-    onValue(ref(positionDb, 'players'), (snapshot) => {
-        const data = snapshot.val() || {};
-        Object.keys(data).forEach((id) => {
-            if (!players[id]) {
-                const video = document.createElement('video');
-                video.id = id;
-                video.width = 120;
-                video.height = 90;
-                video.style.position = 'absolute';
-                document.body.appendChild(video);
+        Object.entries(signals).forEach(([key, { from, offer, answer, candidate }]) => {
+            if (from === userId) return;
+
+            if (!peers[from]) connectToNewUser(from);
+
+            const peer = peers[from];
+
+            if (offer) {
+                peer.setRemoteDescription(new RTCSessionDescription(offer)).then(() => {
+                    return peer.createAnswer();
+                }).then((answer) => {
+                    return peer.setLocalDescription(answer);
+                }).then(() => {
+                    push(ref(videoDb, `signals/${from}`), { from: userId, answer });
+                });
             }
-            players[id] = data[id];
-            const video = document.getElementById(id);
-            if (video) {
-                video.style.left = `${data[id].x}px`;
-                video.style.top = `${data[id].y}px`;
+
+            if (answer) {
+                peer.setRemoteDescription(new RTCSessionDescription(answer));
+            }
+
+            if (candidate) {
+                peer.addIceCandidate(new RTCIceCandidate(candidate));
             }
         });
     });
 
-    // Game loop
-    function update() {
-        player.x += player.dx || 0;
-        player.y += player.dy || 0;
+    set(ref(videoDb, `users/${userId}`), { id: userId });
 
-        // Keep within canvas boundaries
-        player.x = Math.max(0, Math.min(player.x, canvas.width - player.width));
-        player.y = Math.max(0, Math.min(player.y, canvas.height - player.height));
-
-        sendPositionToFirebase();
-        requestAnimationFrame(update);
+    function movePlayer(dx = 0, dy = 0) {
+        player.x = Math.max(0, Math.min(player.x + dx, window.innerWidth - player.width));
+        player.y = Math.max(0, Math.min(player.y + dy, window.innerHeight - player.height));
+        videoElement.style.left = `${player.x}px`;
+        videoElement.style.top = `${player.y}px`;
+        set(ref(positionDb, `players/${userId}`), player);
     }
 
-    update();
+    document.getElementById("left").onmousedown = () => movePlayer(-10, 0);
+    document.getElementById("right").onmousedown = () => movePlayer(10, 0);
+    document.getElementById("up").onmousedown = () => movePlayer(0, -10);
+
+    onValue(ref(positionDb, "players"), (snapshot) => {
+        const players = snapshot.val();
+        if (!players) return;
+
+        Object.entries(players).forEach(([id, pos]) => {
+            if (id !== userId) {
+                let video = document.getElementById(id);
+                if (!video) {
+                    video = document.createElement("video");
+                    video.id = id;
+                    video.autoplay = true;
+                    video.style.position = "absolute";
+                    document.body.appendChild(video);
+                }
+                video.style.left = `${pos.x}px`;
+                video.style.top = `${pos.y}px`;
+            }
+        });
+    });
+
+    window.addEventListener("beforeunload", () => {
+        remove(ref(positionDb, `players/${userId}`));
+        remove(ref(videoDb, `users/${userId}`));
+    });
 </script>
 </body>
 </html>
