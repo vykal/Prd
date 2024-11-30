@@ -63,18 +63,7 @@
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
-  import { getDatabase, ref, set, onValue, remove, push } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
-
-  const firebaseConfigVideo = {
-    apiKey: "AIzaSyB-sXXU2-dWigTrpYp1hnWbDjqqJ2gr0Yw",
-    authDomain: "videjo-d0996.firebaseapp.com",
-    databaseURL: "https://videjo-d0996-default-rtdb.europe-west1.firebasedatabase.app",
-    projectId: "videjo-d0996",
-    storageBucket: "videjo-d0996.firebasestorage.app",
-    messagingSenderId: "175126755237",
-    appId: "1:175126755237:web:8cf31d7a4d08f9fb2bda4c",
-    measurementId: "G-6Q2BJX1FE5"
-  };
+  import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
 
   const firebaseConfigGame = {
     apiKey: "AIzaSyACWLI7L0zhZk7RFQyEXlOyQjtMPF-MgDw",
@@ -87,9 +76,7 @@
     measurementId: "G-GFVZ6ZD5RE"
   };
 
-  const appVideo = initializeApp(firebaseConfigVideo, "videoApp");
-  const appGame = initializeApp(firebaseConfigGame, "gameApp");
-  const dbVideo = getDatabase(appVideo);
+  const appGame = initializeApp(firebaseConfigGame);
   const dbGame = getDatabase(appGame);
 
   const canvas = document.getElementById("gameCanvas");
@@ -98,8 +85,8 @@
   canvas.height = window.innerHeight;
 
   const userId = `player_${Math.random().toString(36).substring(2, 9)}`;
-  const peers = {};
   const players = {};
+  const videoElements = {}; // Ukladá video elementy hráčov
 
   const player = {
     id: userId,
@@ -156,14 +143,25 @@
   };
 
   const drawPlayers = () => {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
     Object.values(players).forEach((p) => {
       if (p.id !== userId) {
-        const otherVideo = document.querySelector(`video[data-id="${p.id}"]`);
-        if (otherVideo) {
-          otherVideo.style.left = `${p.x}px`;
-          otherVideo.style.top = `${p.y}px`;
+        if (!videoElements[p.id]) {
+          // Vytvor nové video pre ostatných hráčov
+          const otherVideo = document.createElement("video");
+          otherVideo.autoplay = true;
+          otherVideo.style.position = "absolute";
+          otherVideo.style.width = "100px";
+          otherVideo.style.height = "75px";
+          otherVideo.style.border = "2px solid #fff";
+          otherVideo.style.borderRadius = "5px";
+          otherVideo.dataset.id = p.id;
+          document.body.appendChild(otherVideo);
+          videoElements[p.id] = otherVideo;
         }
+
+        const otherVideo = videoElements[p.id];
+        otherVideo.style.left = `${p.x}px`;
+        otherVideo.style.top = `${p.y}px`;
       }
     });
   };
