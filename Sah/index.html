@@ -1,71 +1,79 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Šach proti počítaču</title>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css">
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.13.4/chess.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Šach proti počítaču</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.12.0/chess.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stockfish/stockfish.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 0;
+            padding: 0;
+            background-color: #f0f0f0;
+        }
+
+        h1 {
+            margin-top: 20px;
+        }
+
+        #board {
+            width: 400px;
+            margin: 20px auto;
+        }
+    </style>
 </head>
 <body>
-  <h1>Šach proti počítaču</h1>
-  <div id="board" style="width: 400px"></div>
-  <p id="status"></p>
-  <p id="fen"></p>
-  <p id="pgn"></p>
-  <script>
-    const board = Chessboard('board', {
-      draggable: true,
-      position: 'start',
-      onDrop: handleMove
-    });
+    <h1>Šach proti inteligentnému počítaču</h1>
+    <div id="board"></div>
+    <script>
+        const boardElement = document.getElementById('board');
+        const game = new Chess();
+        const stockfish = new Worker('https://cdn.jsdelivr.net/npm/stockfish/stockfish.js');
 
-    const game = new Chess();
+        let board = Chessboard('board', {
+            draggable: true,
+            position: 'start',
+            onDrop: onDrop,
+            onSnapEnd: onSnapEnd
+        });
 
-    function handleMove(source, target) {
-      const move = game.move({
-        from: source,
-        to: target,
-        promotion: 'q'
-      });
+        // Handle player move
+        function onDrop(source, target) {
+            const move = game.move({ from: source, to: target, promotion: 'q' });
 
-      if (move === null) return 'snapback';
+            if (move === null) return 'snapback';
 
-      updateStatus();
-      window.setTimeout(makeComputerMove, 250);
-    }
+            setTimeout(makeAIMove, 250);
+        }
 
-    function makeComputerMove() {
-      const moves = game.moves();
-      if (moves.length === 0) return;
+        // Update the board after a move
+        function onSnapEnd() {
+            board.position(game.fen());
+        }
 
-      const move = moves[Math.floor(Math.random() * moves.length)];
-      game.move(move);
+        // Make the AI move
+        function makeAIMove() {
+            if (game.game_over()) {
+                alert('Koniec hry!');
+                return;
+            }
 
-      board.position(game.fen());
-      updateStatus();
-    }
+            stockfish.postMessage(`position fen ${game.fen()}`);
+            stockfish.postMessage('go depth 15');
 
-    function updateStatus() {
-      const statusElement = document.getElementById('status');
-      const fenElement = document.getElementById('fen');
-      const pgnElement = document.getElementById('pgn');
-
-      let status = '';
-      if (game.in_checkmate()) {
-        status = 'Šach mat!';
-      } else if (game.in_draw()) {
-        status = 'Remíza!';
-      } else {
-        status = `Na rade je ${game.turn() === 'w' ? 'Biely' : 'Čierny'}`;
-        if (game.in_check()) status += ', šach!';
-      }
-
-      statusElement.innerText = status;
-      fenElement.innerText = `FEN: ${game.fen()}`;
-      pgnElement.innerText = `PGN: ${game.pgn()}`;
-    }
-  </script>
+            stockfish.onmessage = function (event) {
+                if (event.data.includes('bestmove')) {
+                    const aiMove = event.data.split(' ')[1];
+                    game.move({ from: aiMove.substring(0, 2), to: aiMove.substring(2, 4), promotion: 'q' });
+                    board.position(game.fen());
+                }
+            };
+        }
+    </script>
 </body>
 </html>
