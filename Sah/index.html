@@ -27,10 +27,10 @@
     <div id="board"></div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.12.0/chess.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/stockfish/stockfish.js"></script>
+    <script src="./libs/stockfish.js"></script>
     <script>
         const game = new Chess();
-        const stockfish = new Worker('https://cdn.jsdelivr.net/npm/stockfish/stockfish.js');
+        const stockfish = new Worker('./libs/stockfish.js');
 
         const board = Chessboard('board', {
             draggable: true,
