@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Šach proti počítaču</title>
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      background-color: #f0f0f0;
+      margin: 0;
+      font-family: Arial, sans-serif;
+    }
+
+    #board {
+      width: 400px;
+      height: 400px;
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      grid-template-rows: repeat(8, 1fr);
+      border: 2px solid black;
+    }
+
+    .square {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+    }
+
+    .square.light {
+      background-color: #eee;
+    }
+
+    .square.dark {
+      background-color: #777;
+      color: white;
+    }
+
+    #resetButton {
+      margin-top: 20px;
+      padding: 10px 20px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="board"></div>
+  <button id="resetButton">Resetovať hru</button>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/1.0.0/chess.min.js"></script>
+  <script>
+    const boardElement = document.getElementById("board");
+    const resetButton = document.getElementById("resetButton");
+    let chess = new Chess();
+
+    // Inicializácia šachovnice
+    function createBoard() {
+      boardElement.innerHTML = "";
+      for (let i = 0; i < 64; i++) {
+        const square = document.createElement("div");
+        square.classList.add("square");
+        const isLight = (Math.floor(i / 8) + (i % 8)) % 2 === 0;
+        square.classList.add(isLight ? "light" : "dark");
+        square.dataset.square = getSquareName(i);
+        square.addEventListener("click", () => onSquareClick(square));
+        boardElement.appendChild(square);
+      }
+      updateBoard();
+    }
+
+    // Získanie názvu poľa (napr. "e4")
+    function getSquareName(index) {
+      const file = "abcdefgh"[index % 8];
+      const rank = 8 - Math.floor(index / 8);
+      return file + rank;
+    }
+
+    // Aktualizácia šachovnice
+    function updateBoard() {
+      const squares = document.querySelectorAll(".square");
+      squares.forEach(square => {
+        const piece = chess.get(square.dataset.square);
+        square.textContent = piece ? getPieceSymbol(piece) : "";
+      });
+    }
+
+    // Získanie symbolu figúrky
+    function getPieceSymbol(piece) {
+      const symbols = {
+        p: "♙", n: "♘", b: "♗", r: "♖", q: "♕", k: "♔",
+        P: "♟", N: "♞", B: "♝", R: "♜", Q: "♛", K: "♚"
+      };
+      return symbols[piece.color === "w" ? piece.type.toUpperCase() : piece.type];
+    }
+
+    // Klik na pole
+    let selectedSquare = null;
+    function onSquareClick(square) {
+      const squareName = square.dataset.square;
+      if (selectedSquare) {
+        // Pokus o vykonanie ťahu
+        const move = chess.move({
+          from: selectedSquare,
+          to: squareName,
+          promotion: "q" // Povýšenie pešiaka na dámu
+        });
+        selectedSquare = null;
+        if (move) {
+          updateBoard();
+          if (!chess.game_over()) playComputerMove();
+        }
+      } else {
+        selectedSquare = squareName;
+      }
+    }
+
+    // Hranie ťahu počítača
+    async function playComputerMove() {
+      const stockfish = new Worker("https://raw.githubusercontent.com/niklasf/stockfish.js/master/src/stockfish.asm.js");
+      stockfish.postMessage("uci");
+      stockfish.postMessage(`position fen ${chess.fen()}`);
+      stockfish.postMessage("go depth 10");
+
+      stockfish.onmessage = function(event) {
+        const message = event.data;
+        if (message.startsWith("bestmove")) {
+          const move = message.split(" ")[1];
+          chess.move({
+            from: move.slice(0, 2),
+            to: move.slice(2, 4),
+            promotion: "q"
+          });
+          updateBoard();
+          stockfish.terminate();
+        }
+      };
+    }
+
+    // Resetovanie hry
+    resetButton.addEventListener("click", () => {
+      chess = new Chess();
+      createBoard();
+    });
+
+    // Inicializácia
+    createBoard();
+  </script>
+</body>
+</html>
