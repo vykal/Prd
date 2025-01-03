@@ -3,81 +3,69 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Chess vs Computer</title>
-  <style>
-    body {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      margin: 0;
-      background-color: #f0f0f0;
-    }
-    #board {
-      width: 400px;
-    }
-  </style>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/1.0.0-beta.1/chess.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard.min.js"></script>
+  <title>Šach proti počítaču</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.13.4/chess.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script>
+</head>
+<body>
+  <h1>Šach proti počítaču</h1>
+  <div id="board" style="width: 400px"></div>
+  <p id="status"></p>
+  <p id="fen"></p>
+  <p id="pgn"></p>
   <script>
-    // Include Stockfish engine
-    const stockfish = new Worker("https://raw.githubusercontent.com/niklasf/stockfish.wasm/master/src/stockfish.wasm.js");
+    const board = Chessboard('board', {
+      draggable: true,
+      position: 'start',
+      onDrop: handleMove
+    });
 
-    // Initialize Chessboard and Chess.js
-    let board;
-    const chess = new Chess();
+    const game = new Chess();
 
-    function onDragStart(source, piece) {
-      if (chess.game_over()) return false;
-      if (chess.turn() === "w" && piece.startsWith("b")) return false;
-      if (chess.turn() === "b" && piece.startsWith("w")) return false;
-    }
+    function handleMove(source, target) {
+      const move = game.move({
+        from: source,
+        to: target,
+        promotion: 'q'
+      });
 
-    function onDrop(source, target) {
-      const move = chess.move({ from: source, to: target, promotion: "q" });
+      if (move === null) return 'snapback';
 
-      if (!move) return "snapback";
-
-      updateBoard();
-
-      if (!chess.game_over()) {
-        setTimeout(makeComputerMove, 500);
-      }
-    }
-
-    function onSnapEnd() {
-      board.position(chess.fen());
-    }
-
-    function updateBoard() {
-      board.position(chess.fen());
+      updateStatus();
+      window.setTimeout(makeComputerMove, 250);
     }
 
     function makeComputerMove() {
-      stockfish.postMessage(`position fen ${chess.fen()}`);
-      stockfish.postMessage("go depth 15");
+      const moves = game.moves();
+      if (moves.length === 0) return;
 
-      stockfish.onmessage = (event) => {
-        if (event.data.startsWith("bestmove")) {
-          const move = event.data.split(" ")[1];
-          chess.move({ from: move.slice(0, 2), to: move.slice(2, 4), promotion: "q" });
-          updateBoard();
-        }
-      };
+      const move = moves[Math.floor(Math.random() * moves.length)];
+      game.move(move);
+
+      board.position(game.fen());
+      updateStatus();
     }
 
-    document.addEventListener("DOMContentLoaded", () => {
-      board = Chessboard("board", {
-        draggable: true,
-        position: "start",
-        onDragStart,
-        onDrop,
-        onSnapEnd,
-      });
-    });
+    function updateStatus() {
+      const statusElement = document.getElementById('status');
+      const fenElement = document.getElementById('fen');
+      const pgnElement = document.getElementById('pgn');
+
+      let status = '';
+      if (game.in_checkmate()) {
+        status = 'Šach mat!';
+      } else if (game.in_draw()) {
+        status = 'Remíza!';
+      } else {
+        status = `Na rade je ${game.turn() === 'w' ? 'Biely' : 'Čierny'}`;
+        if (game.in_check()) status += ', šach!';
+      }
+
+      statusElement.innerText = status;
+      fenElement.innerText = `FEN: ${game.fen()}`;
+      pgnElement.innerText = `PGN: ${game.pgn()}`;
+    }
   </script>
-</head>
-<body>
-  <div id="board"></div>
 </body>
 </html>
